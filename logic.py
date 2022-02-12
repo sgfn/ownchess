@@ -79,20 +79,58 @@ class Board:
         for i in range(2, 6):
             self.board[i] = [None for _ in range(8)]
 
-    def move_algebraic(self, alg_str: str) -> Tuple[int, int]:
+    def alg_to_own(self, alg_str: str) -> Tuple[int, int]:
+        """
+        Converts algebraic field coordinates to numerical ones 
+        used by the board. Assumes the input is correct.
+        """
         files = {'a': 0, 'b': 1, 'c': 2, 'd': 3,
                  'e': 4, 'f': 5, 'g': 6, 'h': 7}
-        to_tuple = (8-int(alg_str[1]), files[alg_str[0].lower()])
-        return to_tuple
+        own_tpl = (8-int(alg_str[1]), files[alg_str[0].lower()])
+        return own_tpl
 
-    def move(self, from_tpl: Tuple[int, int], to_tpl: Tuple[int, int]) -> None:
-        from_row, from_col = from_tpl
-        to_row, to_col = to_tpl
-        if self.board[from_row][from_col] == None:
+    def move_piece(self, from_str: str, to_str: str='') -> None:
+        """
+        Moves a single piece on the board (algebraic coordinates). 
+        Will handle two 2-character strings or one 4-character string.
+        Assumes the input is correct.
+        """
+        if not to_str:
+            to_str = from_str[2:]
+            from_str = from_str[:2]
+        
+        from_row, from_col = self.alg_to_own(from_str)
+        to_row, to_col = self.alg_to_own(to_str)
+        if self.board[from_row][from_col] is None:
             print('DEBUG: Nothing to move')
             return None
         self.board[to_row][to_col] = self.board[from_row][from_col]
         self.board[from_row][from_col] = None
+
+    def mv(self, *args):
+        """Alias for the .move_piece() method."""
+        return self.move_piece(*args)
+
+    def add_piece(self, colour: str, type: str,
+                  coords: Tuple[int, int]) -> None:
+        """
+        Adds a piece to the board at the specified coordinates (own).
+        Assumes the input is correct.
+        """
+        row, col = coords
+        if self.board[row][col] is not None:
+            print('DEBUG: Field occupied')
+        self.board[row][col] = Piece(colour, type)
+
+    def remove_piece(self, coords: Tuple[int, int]) -> None:
+        """
+        Removes a piece from the specified coordinates (own).
+        Assumes the input is correct.
+        """
+        row, col = coords
+        if self.board[row][col] is None:
+            print('DEBUG: Nothing to remove')
+        self.board[row][col] = None
 
 
 class Game:
@@ -100,6 +138,7 @@ class Game:
         self.board = Board()
         self.board.setup()
         self.to_move = 'w'
+        self.b = self.board  # Alias for the board.
 
 
 if __name__ == '__main__':
