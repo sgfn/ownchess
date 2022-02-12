@@ -33,9 +33,15 @@ class Board:
     #               f i l e s
 
     def __init__(self) -> None:
+        """
+        Creates a board object with an empty board.
+        Use .setup() to prepare it for a game.
+        """
         self.board = [[None for _ in range(8)] for _ in range(8)]
 
     def __str__(self) -> str:
+        """Prints the board."""
+
         b_data = ""
         row_num = 8
         field_light = True
@@ -58,7 +64,7 @@ class Board:
                     else:
                         b_data += COL_DARK_W + ' '
 
-                b_data += ' '+COL_ESC
+                b_data += ' ' + COL_ESC
                 field_light = not field_light
             b_data += str(row_num) + '\n'
             row_num -= 1
@@ -67,9 +73,14 @@ class Board:
         return b_data
 
     def __repr__(self) -> str:
+        """
+        Tells Python to always use the .__str__() method for printing the board.
+        """
         return self.__str__()
 
     def setup(self) -> None:
+        """Clears the board and prepares it for a new game."""
+
         data = ('r', 'n', 'b', 'q', 'k', 'b', 'n', 'r')
         for i in range(8):
             self.board[0][i] = Piece('b', data[i])
@@ -89,7 +100,7 @@ class Board:
         own_tpl = (8-int(alg_str[1]), files[alg_str[0].lower()])
         return own_tpl
 
-    def move_piece(self, from_str: str, to_str: str='') -> None:
+    def move_piece(self, from_str: str, to_str: str = '') -> None:
         """
         Moves a single piece on the board (algebraic coordinates). 
         Will handle two 2-character strings or one 4-character string.
@@ -98,7 +109,7 @@ class Board:
         if not to_str:
             to_str = from_str[2:]
             from_str = from_str[:2]
-        
+
         from_row, from_col = self.alg_to_own(from_str)
         to_row, to_col = self.alg_to_own(to_str)
         if self.board[from_row][from_col] is None:
@@ -109,6 +120,7 @@ class Board:
 
     def mv(self, *args):
         """Alias for the .move_piece() method."""
+
         return self.move_piece(*args)
 
     def add_piece(self, colour: str, type: str,
@@ -132,6 +144,102 @@ class Board:
             print('DEBUG: Nothing to remove')
         self.board[row][col] = None
 
+    def move_is_legal(self, player_colour, from_tpl, to_tpl) -> int:
+        """
+        Checks whether a given move is legal. Might require refactoring later.
+        Right now checks only if a piece moves the way it's supposed to
+        (doesn't check for check(mate)s, pins etc.).
+        """
+
+        # Check whether the fields aren't the same
+        if from_tpl == to_tpl:
+            print('DEBUG: Not a move')
+            return 1
+
+        from_row, from_col = from_tpl
+        to_row, to_col = to_tpl
+        move_row = to_row - from_row
+        move_col = to_col - from_col
+
+        piece = self.board[from_row][from_col]
+        dest = self.board[to_row][to_col]
+
+        # Check whether the field is empty
+        if piece is None:
+            print('DEBUG: Nothing to move')
+            return 2
+
+        # Check whether one owns the piece
+        if piece.colour != player_colour:
+            print('DEBUG: Not your piece')
+            return 3
+
+        # Check whether the destination field isn't occupied by a friendly piece
+        if dest is not None and dest.colour == player_colour:
+            print('DEBUG: Target square occupied by a friendly piece')
+            return 4
+
+        if piece.type == 'k':
+            return -1 <= move_row <= 1 and -1 <= move_col <= 1
+
+        if piece.type == 'q':
+            if move_row == 0:
+                step_col = -1 if move_col < 0 else 1
+                curr_col = from_col + step_col
+                while curr_col != to_col:
+                    if self.board[to_row][curr_col] is not None:
+                        print('DEBUG: Another piece in the way')
+                        return 5
+                    curr_col += step_col
+                return 0
+
+            elif move_col == 0:
+                step_row = -1 if move_row < 0 else 1
+                curr_row = from_row + step_row
+                while curr_row != to_row:
+                    if self.board[curr_row][to_col] is not None:
+                        print('DEBUG: Another piece in the way')
+                        return 5
+                    curr_row += step_row
+                return 0
+
+            elif abs(move_row) == abs(move_col):
+                step_col = -1 if move_col < 0 else 1
+                step_row = -1 if move_row < 0 else 1
+                curr_col = from_col + step_col
+                curr_row = from_row + step_row
+                while curr_col != to_col:
+                    if self.board[curr_row][curr_col] is not None:
+                        print('DEBUG: Another piece in the way')
+                        return 5
+                    curr_row += step_row
+                    curr_col += step_col
+                return 0
+            print('DEBUG: Not a valid move')
+            return 6
+
+        if piece.type == 'r':
+            return move_row == 0 or move_col == 0
+
+        if piece.type == 'b':
+            return abs(move_row) == abs(move_col)
+
+        if piece.type == 'n':
+            return (move_row, move_col) in ((1, 2), (1, -2), (-1, 2), (-1, -2),
+                                             (2, 1), (2, -1), (-2, 1), (-2, -1))
+        
+        # pawn
+    
+    def mil(self, colour, from_str, to_str=''):
+        # Alias for the .move_is_legal() method utilising algebraic notation.
+        if not to_str:
+            to_str = from_str[2:]
+            from_str = from_str[:2]
+
+        from_tpl = self.alg_to_own(from_str)
+        to_tpl = self.alg_to_own(to_str)
+
+        return self.move_is_legal(colour, from_tpl, to_tpl)
 
 class Game:
     def __init__(self) -> None:
