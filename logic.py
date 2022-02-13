@@ -1,4 +1,5 @@
 from typing import Tuple
+from unittest import TestResult
 
 
 COL_ESC = '\x1b[0m'
@@ -165,15 +166,14 @@ class Board:
             st_c = signum(to_c - fr_c)
             curr_r = fr_r + st_r
             curr_c = fr_c + st_c
-            
+
             while curr_c != to_c or curr_r != to_r:
                 if b[curr_r][curr_c] is not None:
                     return False
                 curr_c += st_c
                 curr_r += st_r
-            
-            return True
 
+            return True
 
         # Check whether the fields aren't the same
         if from_tpl == to_tpl:
@@ -272,14 +272,14 @@ class Board:
             else:
                 print('DEBUG: Another piece in the way')
                 return 5
-        
+
         # Standard pawn capture
         if mv_r == mv_pawn and abs(mv_c) == 1:
             if dest is not None and dest.colour != player_colour:
                 return 0
             print('DEBUG: Pawns can only move diagonally when capturing')
             return 6
-        
+
         # En passant
         # TBI
 
@@ -289,7 +289,7 @@ class Board:
                 print('DEBUG: Pawns capture diagonally')
                 return 6
             # right now won't get called, will be handled by the first if
-            
+
             pass
 
         print('DEBUG: Not a valid move')
@@ -305,6 +305,93 @@ class Board:
         to_tpl = self.alg_to_own(to_str)
 
         return self.move_is_legal(colour, from_tpl, to_tpl)
+
+    def get_legal_moves(self, field_str):
+        """
+        Function returning a list of legal moves.
+        Does not take checks into account.
+        """
+        field_row, field_col = self.alg_to_own(field_str)
+        piece = self.board[field_row][field_col]
+        legal_moves = []
+        possible_moves = []
+
+        if piece is None:
+            print(f'DEBUG: No piece at {field_str.lower()}')
+            return legal_moves
+
+        if piece.type == 'p':
+            if piece.colour == 'w':
+                possible_moves.append((-1, 0))
+                if field_row == 6:
+                    possible_moves.append((-2, 0))
+                possible_captures = [(-1, -1), (-1, 1)]
+            else:
+                possible_moves.append((1, 0))
+                if field_row == 1:
+                    possible_moves.append((2, 0))
+                possible_captures = [(1, -1), (1, 1)]
+            
+            for move_row,  move_col in possible_moves:
+                first_field_empty = False
+                if (0 <= field_row + move_row <= 7 and
+                        0 <= field_col + move_col <= 7):
+                    dest = self.board[field_row+move_row][field_col+move_col]
+                    if dest is None:
+                        if abs(move_row) == 1:
+                            first_field_empty = True
+                            legal_moves.append((move_row, move_col))
+                        else:
+                            if first_field_empty:
+                                legal_moves.append((move_row, move_col))
+
+            for move_row, move_col in possible_captures:
+                if (0 <= field_row + move_row <= 7 and
+                        0 <= field_col + move_col <= 7):
+                    dest = self.board[field_row+move_row][field_col+move_col]
+                    if dest is not None and dest.colour != piece.colour:
+                        legal_moves.append((move_row, move_col))
+
+            return legal_moves
+
+        if piece.type == 'k':
+            possible_moves = [(1, 1), (1, 0), (1, -1), (0, 1), 
+                              (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+
+        if piece.type == 'n':
+            possible_moves = [(1, 2), (1, -2), (-1, 2), (-1, -2),
+                              (2, 1), (2, -1), (-2, 1), (-2, -1)]
+
+        if piece.type in ('k', 'n'):              
+            for move_row, move_col in possible_moves:
+                if (0 <= field_row + move_row <= 7 and
+                        0 <= field_col + move_col <= 7):
+                    dest = self.board[field_row+move_row][field_col+move_col]
+                    if dest is None or dest.colour != piece.colour:
+                        legal_moves.append((move_row, move_col))
+            return legal_moves
+
+        if piece.type in ('b', 'q'):
+            possible_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+        
+        if piece.type in ('r', 'q'):
+            possible_moves.extend([(1, 0), (-1, 0), (0, 1), (0, -1)])
+
+        for move_row, move_col in possible_moves:
+            step_row, step_col = move_row, move_col
+            found_piece = False
+            while (0 <= field_row + move_row <= 7 and 
+                    0 <= field_col + move_col <= 7 and not found_piece):
+                dest = self.board[field_row+move_row][field_col+move_col]
+                if dest is None:
+                    legal_moves.append((move_row, move_col))
+                else:
+                    found_piece = True
+                    if dest.colour != piece.colour:
+                        legal_moves.append((move_row, move_col))
+                move_row += step_row
+                move_col += step_col
+        return legal_moves
 
 
 class Game:
