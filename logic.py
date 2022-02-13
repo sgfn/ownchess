@@ -2,11 +2,13 @@ from typing import Tuple
 from unittest import TestResult
 
 
-COL_ESC = '\x1b[0m'
-COL_LIGHT_B = '\x1b[0;30;46m'
-COL_LIGHT_W = '\x1b[0;37;46m'
-COL_DARK_B = '\x1b[0;30;44m'
-COL_DARK_W = '\x1b[0;37;44m'
+COLOUR_ESC = '\x1b[0m'
+COLOUR_LIGHT_B = '\x1b[0;30;46m'
+COLOUR_LIGHT_W = '\x1b[0;37;46m'
+COLOUR_DARK_B = '\x1b[0;30;44m'
+COLOUR_DARK_W = '\x1b[0;37;44m'
+COLOUR_HIGHLIGHT_B = '\x1b[0;30;41m'
+COLOUR_HIGHLIGHT_W = '\x1b[0;37;41m'
 
 
 class Piece:
@@ -51,21 +53,21 @@ class Board:
                 if field_light:
                     if field is not None:
                         if field.colour == 'w':
-                            b_data += COL_LIGHT_W + str(field)
+                            b_data += COLOUR_LIGHT_W + str(field)
                         else:
-                            b_data += COL_LIGHT_B + str(field)
+                            b_data += COLOUR_LIGHT_B + str(field)
                     else:
-                        b_data += COL_LIGHT_W + ' '
+                        b_data += COLOUR_LIGHT_W + ' '
                 else:
                     if field is not None:
                         if field.colour == 'w':
-                            b_data += COL_DARK_W + str(field)
+                            b_data += COLOUR_DARK_W + str(field)
                         else:
-                            b_data += COL_DARK_B + str(field)
+                            b_data += COLOUR_DARK_B + str(field)
                     else:
-                        b_data += COL_DARK_W + ' '
+                        b_data += COLOUR_DARK_W + ' '
 
-                b_data += ' ' + COL_ESC
+                b_data += ' ' + COLOUR_ESC
                 field_light = not field_light
             b_data += str(row_num) + '\n'
             row_num -= 1
@@ -310,6 +312,7 @@ class Board:
         """
         Function returning a list of legal moves.
         Does not take checks into account.
+        Castling, en passant TBA.
         """
         field_row, field_col = self.alg_to_own(field_str)
         piece = self.board[field_row][field_col]
@@ -332,8 +335,8 @@ class Board:
                     possible_moves.append((2, 0))
                 possible_captures = [(1, -1), (1, 1)]
             
-            for move_row,  move_col in possible_moves:
-                first_field_empty = False
+            first_field_empty = False
+            for move_row, move_col in possible_moves:
                 if (0 <= field_row + move_row <= 7 and
                         0 <= field_col + move_col <= 7):
                     dest = self.board[field_row+move_row][field_col+move_col]
@@ -392,6 +395,50 @@ class Board:
                 move_row += step_row
                 move_col += step_col
         return legal_moves
+
+    def show_legal_moves(self, field_str):
+        field_row, field_col = self.alg_to_own(field_str)
+        legal_moves = self.get_legal_moves(field_str)
+        highlit_fields = [(move_row + field_row, move_col + field_col) 
+                            for move_row, move_col in legal_moves]
+        # Modified copy of .__str__() method (ineffective)
+        b_data = ""
+        row_num = 8
+        field_light = True
+        for field_row, row in enumerate(self.board):
+            for field_col, field in enumerate(row):
+                if (field_row, field_col) in highlit_fields:
+                    if field is not None:
+                        if field.colour == 'w':
+                            b_data += COLOUR_HIGHLIGHT_W + str(field)
+                        else:
+                            b_data += COLOUR_HIGHLIGHT_B + str(field)
+                    else:
+                        b_data += COLOUR_HIGHLIGHT_W + ' '
+                elif field_light:
+                    if field is not None:
+                        if field.colour == 'w':
+                            b_data += COLOUR_LIGHT_W + str(field)
+                        else:
+                            b_data += COLOUR_LIGHT_B + str(field)
+                    else:
+                        b_data += COLOUR_LIGHT_W + ' '
+                else:
+                    if field is not None:
+                        if field.colour == 'w':
+                            b_data += COLOUR_DARK_W + str(field)
+                        else:
+                            b_data += COLOUR_DARK_B + str(field)
+                    else:
+                        b_data += COLOUR_DARK_W + ' '
+
+                b_data += ' ' + COLOUR_ESC
+                field_light = not field_light
+            b_data += str(row_num) + '\n'
+            row_num -= 1
+            field_light = not field_light
+        b_data += ' A B C D E F G H'
+        print(b_data)
 
 
 class Game:
