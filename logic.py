@@ -151,18 +151,42 @@ class Board:
         (doesn't check for check(mate)s, pins etc.).
         """
 
+        def signum(val: int) -> int:
+            """Helper function for getting the step value."""
+
+            if val == 0:
+                return 0
+            return 1 if val > 0 else -1
+
+        def collision_checker(b, fr_r, fr_c, to_r, to_c):
+            """Helper function for detecting collisions with other pieces."""
+
+            st_r = signum(to_r - fr_r)
+            st_c = signum(to_c - fr_c)
+            curr_r = fr_r + st_r
+            curr_c = fr_c + st_c
+            
+            while curr_c != to_c or curr_r != to_r:
+                if b[curr_r][curr_c] is not None:
+                    return False
+                curr_c += st_c
+                curr_r += st_r
+            
+            return True
+
+
         # Check whether the fields aren't the same
         if from_tpl == to_tpl:
             print('DEBUG: Not a move')
             return 1
 
-        from_row, from_col = from_tpl
-        to_row, to_col = to_tpl
-        move_row = to_row - from_row
-        move_col = to_col - from_col
+        fr_r, fr_c = from_tpl
+        to_r, to_c = to_tpl
+        mv_r = to_r - fr_r
+        mv_c = to_c - fr_c
 
-        piece = self.board[from_row][from_col]
-        dest = self.board[to_row][to_col]
+        piece = self.board[fr_r][fr_c]
+        dest = self.board[to_r][to_c]
 
         # Check whether the field is empty
         if piece is None:
@@ -174,62 +198,103 @@ class Board:
             print('DEBUG: Not your piece')
             return 3
 
-        # Check whether the destination field isn't occupied by a friendly piece
+        # Check whether the destination field is occupied by a friendly piece
         if dest is not None and dest.colour == player_colour:
             print('DEBUG: Target square occupied by a friendly piece')
             return 4
 
         if piece.type == 'k':
-            return -1 <= move_row <= 1 and -1 <= move_col <= 1
+            if -1 <= mv_r <= 1 and -1 <= mv_c <= 1:
+                return 0
+            else:
+                print('DEBUG: Not a valid move')
+                return 6
 
         if piece.type == 'q':
-            if move_row == 0:
-                step_col = -1 if move_col < 0 else 1
-                curr_col = from_col + step_col
-                while curr_col != to_col:
-                    if self.board[to_row][curr_col] is not None:
-                        print('DEBUG: Another piece in the way')
-                        return 5
-                    curr_col += step_col
-                return 0
-
-            elif move_col == 0:
-                step_row = -1 if move_row < 0 else 1
-                curr_row = from_row + step_row
-                while curr_row != to_row:
-                    if self.board[curr_row][to_col] is not None:
-                        print('DEBUG: Another piece in the way')
-                        return 5
-                    curr_row += step_row
-                return 0
-
-            elif abs(move_row) == abs(move_col):
-                step_col = -1 if move_col < 0 else 1
-                step_row = -1 if move_row < 0 else 1
-                curr_col = from_col + step_col
-                curr_row = from_row + step_row
-                while curr_col != to_col:
-                    if self.board[curr_row][curr_col] is not None:
-                        print('DEBUG: Another piece in the way')
-                        return 5
-                    curr_row += step_row
-                    curr_col += step_col
-                return 0
-            print('DEBUG: Not a valid move')
-            return 6
+            if mv_r == 0 or mv_c == 0 or abs(mv_r) == abs(mv_c):
+                if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                    return 0
+                else:
+                    print('DEBUG: Another piece in the way')
+                    return 5
+            else:
+                print('DEBUG: Not a valid move')
+                return 6
 
         if piece.type == 'r':
-            return move_row == 0 or move_col == 0
+            if mv_r == 0 or mv_c == 0:
+                if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                    return 0
+                else:
+                    print('DEBUG: Another piece in the way')
+                    return 5
+            else:
+                print('DEBUG: Not a valid move')
+                return 6
 
         if piece.type == 'b':
-            return abs(move_row) == abs(move_col)
+            if abs(mv_r) == abs(mv_c):
+                if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                    return 0
+                else:
+                    print('DEBUG: Another piece in the way')
+                    return 5
+            else:
+                print('DEBUG: Not a valid move')
+                return 6
 
         if piece.type == 'n':
-            return (move_row, move_col) in ((1, 2), (1, -2), (-1, 2), (-1, -2),
-                                             (2, 1), (2, -1), (-2, 1), (-2, -1))
+            if (abs(mv_r), abs(mv_c)) in ((1, 2), (2, 1)):
+                return 0
+            else:
+                print('DEBUG: Not a valid move')
+                return 6
+
+        # Piece is a pawn
+        mv_pawn = -1 if piece.colour == 'w' else 1
+        sr_pawn = 6 if piece.colour == 'w' else 1
+        pr_pawn = 0 if piece.colour == 'w' else 7
+        # Standard pawn move
+        if mv_r == mv_pawn and mv_c == 0:
+            if dest is not None and dest.colour != player_colour:
+                print('DEBUG: Pawns capture diagonally')
+                return 6
+            return 0
+
+        # First pawn move, advance by two ranks
+        if fr_r == sr_pawn and mv_r == mv_pawn * 2 and mv_c == 0:
+            if dest is not None and dest.colour != player_colour:
+                print('DEBUG: Pawns capture diagonally')
+                return 6
+
+            if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                return 0
+            else:
+                print('DEBUG: Another piece in the way')
+                return 5
         
-        # pawn
-    
+        # Standard pawn capture
+        if mv_r == mv_pawn and abs(mv_c) == 1:
+            if dest is not None and dest.colour != player_colour:
+                return 0
+            print('DEBUG: Pawns can only move diagonally when capturing')
+            return 6
+        
+        # En passant
+        # TBI
+
+        # Promotion
+        if mv_r == mv_pawn and to_r == pr_pawn:
+            if dest is not None and dest.colour != player_colour:
+                print('DEBUG: Pawns capture diagonally')
+                return 6
+            # right now won't get called, will be handled by the first if
+            
+            pass
+
+        print('DEBUG: Not a valid move')
+        return 6
+
     def mil(self, colour, from_str, to_str=''):
         # Alias for the .move_is_legal() method utilising algebraic notation.
         if not to_str:
@@ -241,6 +306,7 @@ class Board:
 
         return self.move_is_legal(colour, from_tpl, to_tpl)
 
+
 class Game:
     def __init__(self) -> None:
         self.board = Board()
@@ -248,7 +314,14 @@ class Game:
         self.to_move = 'w'
         self.b = self.board  # Alias for the board.
 
+    def ply(self, move_str) -> None:
+        if self.board.mil(self.to_move, move_str) == 0:
+            self.board.move_piece(move_str)
+            self.to_move = 'b' if self.to_move == 'w' else 'w'
+
 
 if __name__ == '__main__':
     gm = Game()
-    print(gm.board)
+    while True:
+        print(gm.board)
+        gm.ply(input())
