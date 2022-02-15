@@ -1,14 +1,4 @@
-from typing import Tuple
-from unittest import TestResult
-
-
-COLOUR_ESC = '\x1b[0m'
-COLOUR_LIGHT_B = '\x1b[0;30;46m'
-COLOUR_LIGHT_W = '\x1b[0;37;46m'
-COLOUR_DARK_B = '\x1b[0;30;44m'
-COLOUR_DARK_W = '\x1b[0;37;44m'
-COLOUR_HIGHLIGHT_B = '\x1b[0;30;41m'
-COLOUR_HIGHLIGHT_W = '\x1b[0;37;41m'
+from typing import Tuple, List
 
 
 class Piece:
@@ -21,7 +11,22 @@ class Piece:
 
 
 class Board:
-    #   BOARD SETUP:
+    """Class representing an 8x8 chessboard."""
+
+    # Colour definitions for printing the board to stdout
+    # Escape sequence
+    CLR_ESC = '\x1b[0m'
+    # Light squares
+    CLR_L_B = '\x1b[0;30;46m'
+    CLR_L_W = '\x1b[0;37;46m'
+    # Dark squares
+    CLR_D_B = '\x1b[0;30;44m'
+    CLR_D_W = '\x1b[0;37;44m'
+    # Highlit squares
+    CLR_H_B = '\x1b[0;30;45m'
+    CLR_H_W = '\x1b[0;37;45m'
+
+    # Board coordinates:
     #              C O L U M N S
     #      0   1   2   3   4   5   6   7
     #    8                                 0
@@ -37,115 +42,149 @@ class Board:
 
     def __init__(self) -> None:
         """
-        Creates a board object with an empty board.
-        Use .setup() to prepare it for a game.
+        Creates a Board object with an empty 8x8 chessboard.
+        Use setup() to prepare it for a game.
         """
         self.board = [[None for _ in range(8)] for _ in range(8)]
 
-    def __str__(self) -> str:
-        """Prints the board."""
-
-        b_data = ""
-        row_num = 8
-        field_light = True
-        for row in self.board:
-            for field in row:
-                if field_light:
-                    if field is not None:
-                        if field.colour == 'w':
-                            b_data += COLOUR_LIGHT_W + str(field)
-                        else:
-                            b_data += COLOUR_LIGHT_B + str(field)
-                    else:
-                        b_data += COLOUR_LIGHT_W + ' '
+    def __str__(self, highlit_squares=set()) -> str:
+        """
+        Returns a string for printing the board (White's perspective) to stdout.
+        Will highlight certain squares if passed a set of them as an argument.
+        """
+        s = ""
+        sq_light = True # (0, 0) is a light square
+        for sq_row, row in enumerate(self.board):
+            for sq_col, sq in enumerate(row):
+                # Colour selection
+                if (sq_row, sq_col) in highlit_squares:
+                    clr = self.CLR_H_W if (sq is not None and 
+                                           sq.colour == 'w') else self.CLR_H_B
+                elif sq_light:
+                    clr = self.CLR_L_W if (sq is not None and 
+                                           sq.colour == 'w') else self.CLR_L_B
                 else:
-                    if field is not None:
-                        if field.colour == 'w':
-                            b_data += COLOUR_DARK_W + str(field)
-                        else:
-                            b_data += COLOUR_DARK_B + str(field)
-                    else:
-                        b_data += COLOUR_DARK_W + ' '
+                    clr = self.CLR_D_W if (sq is not None and 
+                                           sq.colour == 'w') else self.CLR_D_B
+               
+                # If square occupied by a piece, print a corresponding letter
+                if sq is not None:
+                    sq_str = str(sq)
+                else:
+                    sq_str = ' '
 
-                b_data += ' ' + COLOUR_ESC
-                field_light = not field_light
-            b_data += str(row_num) + '\n'
-            row_num -= 1
-            field_light = not field_light
-        b_data += ' A B C D E F G H'
-        return b_data
+                s += clr + sq_str + ' ' + self.CLR_ESC
+                sq_light = not sq_light
 
-    def __repr__(self) -> str:
-        """
-        Tells Python to always use the .__str__() method for printing the board.
-        """
-        return self.__str__()
+            # Rank markings
+            s += str(8 - sq_row) + '\n'
+            sq_light = not sq_light
+
+        # File markings
+        s += ' A B C D E F G H'
+        return s
+
+    def __repr__(self, *args) -> str:
+        """Links to __str__() as some printing functions call __repr__()."""
+
+        return self.__str__(*args)
 
     def setup(self) -> None:
-        """Clears the board and prepares it for a new game."""
+        """Sets the board up for a game."""
 
-        data = ('r', 'n', 'b', 'q', 'k', 'b', 'n', 'r')
-        for i in range(8):
-            self.board[0][i] = Piece('b', data[i])
-            self.board[1][i] = Piece('b', 'p')
-            self.board[6][i] = Piece('w', 'p')
-            self.board[7][i] = Piece('w', data[i])
+        initial = ('r', 'n', 'b', 'q', 'k', 'b', 'n', 'r')
+        for ind, el in enumerate(initial):
+            self.board[0][ind] = Piece('b', el)
+            self.board[1][ind] = Piece('b', 'p')
+            self.board[6][ind] = Piece('w', 'p')
+            self.board[7][ind] = Piece('w', el)
         for i in range(2, 6):
             self.board[i] = [None for _ in range(8)]
 
-    def alg_to_own(self, alg_str: str) -> Tuple[int, int]:
+    def alg_to_num(self, coords_str: str) -> Tuple[int, int]:
         """
-        Converts algebraic field coordinates to numerical ones 
-        used by the board. Assumes the input is correct.
+        Converts algebraic coordinates of a single square to numerical ones 
+        used by the board. Raises ValueError for invalid strings.
         """
-        files = {'a': 0, 'b': 1, 'c': 2, 'd': 3,
-                 'e': 4, 'f': 5, 'g': 6, 'h': 7}
-        own_tpl = (8-int(alg_str[1]), files[alg_str[0].lower()])
-        return own_tpl
+        
+        if len(coords_str) != 2:
+            raise ValueError(f'Unrecognised coordinates: {coords_str}')
 
-    def move_piece(self, from_str: str, to_str: str = '') -> None:
+        rank, file_ord = int(coords_str[1]), ord(coords_str[0].lower())
+
+        # rank 'a' -> row 0, ord('a') = 97, thus ord(rank) must be in [97,97+7]
+        if not 97 <= file_ord <= 104 or not 1 <= rank <= 8:
+            raise ValueError(f'Invalid coordinates: {coords_str}')
+
+        return (8 - rank, file_ord - 97)
+
+    def move_piece(self, from_str: str, to_str: str='') -> None:
         """
         Moves a single piece on the board (algebraic coordinates). 
         Will handle two 2-character strings or one 4-character string.
-        Assumes the input is correct.
         """
-        if not to_str:
+        if to_str == '':
             to_str = from_str[2:]
             from_str = from_str[:2]
 
-        from_row, from_col = self.alg_to_own(from_str)
-        to_row, to_col = self.alg_to_own(to_str)
+        from_row, from_col = self.alg_to_num(from_str)
+        to_row, to_col = self.alg_to_num(to_str)
+
         if self.board[from_row][from_col] is None:
-            print('DEBUG: Nothing to move')
+            print(f'DEBUG: Square {from_str} is empty')
             return None
+
         self.board[to_row][to_col] = self.board[from_row][from_col]
         self.board[from_row][from_col] = None
 
     def mv(self, *args):
-        """Alias for the .move_piece() method."""
+        """Alias for the move_piece() method."""
 
         return self.move_piece(*args)
 
-    def add_piece(self, colour: str, type: str,
-                  coords: Tuple[int, int]) -> None:
+    def add_piece(self, colour: str, type: str='',
+                  coords_str: str='') -> None:
         """
-        Adds a piece to the board at the specified coordinates (own).
-        Assumes the input is correct.
+        Adds a piece to the board at the specified coordinates (algebraic).
+        Will handle three separate strings or one 4-character string.
+        Syntax: add_piece("{colour}{type}{algebraic coords}")
         """
-        row, col = coords
+        if type == '':
+            coords_str = colour[2:]
+            type = colour[1]
+            colour = colour[0]
+
+        if colour not in ('w', 'b'):
+            raise ValueError(f'Invalid piece colour: {colour}')
+        if type not in ('p', 'b', 'n', 'r', 'q', 'k'):
+            raise ValueError(f'Invalid piece type: {type}')
+        
+        row, col = self.alg_to_num(coords_str)
+
         if self.board[row][col] is not None:
-            print('DEBUG: Field occupied')
+            print(f'DEBUG: Square {coords_str} is occupied, replacing')
+
         self.board[row][col] = Piece(colour, type)
 
-    def remove_piece(self, coords: Tuple[int, int]) -> None:
-        """
-        Removes a piece from the specified coordinates (own).
-        Assumes the input is correct.
-        """
-        row, col = coords
+    def ad(self, *args):
+        """Alias for the add_piece() method."""
+        
+        return self.add_piece(*args)
+
+    def remove_piece(self, coords_str: str) -> None:
+        """Removes a piece from the specified coordinates (algebraic)."""
+
+        row, col = self.alg_to_num(coords_str)
+
         if self.board[row][col] is None:
-            print('DEBUG: Nothing to remove')
+            print(f'DEBUG: Square {coords_str} is empty')
+
         self.board[row][col] = None
+
+    def rm(self, *args):
+        """Alias for remove_piece()."""
+
+        return self.remove_piece(*args)
 
     def move_is_legal(self, player_colour, from_tpl, to_tpl) -> int:
         """
@@ -303,142 +342,113 @@ class Board:
             to_str = from_str[2:]
             from_str = from_str[:2]
 
-        from_tpl = self.alg_to_own(from_str)
-        to_tpl = self.alg_to_own(to_str)
+        from_tpl = self.alg_to_num(from_str)
+        to_tpl = self.alg_to_num(to_str)
 
         return self.move_is_legal(colour, from_tpl, to_tpl)
 
-    def get_legal_moves(self, field_str):
+    def get_legal_moves(self, coords_str: str) -> List[Tuple[int, int]]:
         """
-        Function returning a list of legal moves.
+        Returns a list of legal moves.
         Does not take checks into account.
         Castling, en passant TBA.
         """
-        field_row, field_col = self.alg_to_own(field_str)
-        piece = self.board[field_row][field_col]
+        sq_row, sq_col = self.alg_to_num(coords_str)
+        piece = self.board[sq_row][sq_col]
         legal_moves = []
-        possible_moves = []
+        all_moves = []
 
         if piece is None:
-            print(f'DEBUG: No piece at {field_str.lower()}')
+            print(f'DEBUG: No piece at {coords_str}')
             return legal_moves
 
         if piece.type == 'p':
             if piece.colour == 'w':
-                possible_moves.append((-1, 0))
-                if field_row == 6:
-                    possible_moves.append((-2, 0))
-                possible_captures = [(-1, -1), (-1, 1)]
+                all_moves.append((-1, 0))
+                if sq_row == 6:
+                    all_moves.append((-2, 0))
+                all_captures = [(-1, -1), (-1, 1)]
             else:
-                possible_moves.append((1, 0))
-                if field_row == 1:
-                    possible_moves.append((2, 0))
-                possible_captures = [(1, -1), (1, 1)]
+                all_moves.append((1, 0))
+                if sq_row == 1:
+                    all_moves.append((2, 0))
+                all_captures = [(1, -1), (1, 1)]
             
             first_field_empty = False
-            for move_row, move_col in possible_moves:
-                if (0 <= field_row + move_row <= 7 and
-                        0 <= field_col + move_col <= 7):
-                    dest = self.board[field_row+move_row][field_col+move_col]
+            for mv_row, mv_col in all_moves:
+                if (0 <= sq_row + mv_row <= 7 and
+                        0 <= sq_col + mv_col <= 7):
+                    dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is None:
-                        if abs(move_row) == 1:
+                        if abs(mv_row) == 1:
                             first_field_empty = True
-                            legal_moves.append((move_row, move_col))
+                            legal_moves.append((mv_row, mv_col))
                         else:
                             if first_field_empty:
-                                legal_moves.append((move_row, move_col))
+                                legal_moves.append((mv_row, mv_col))
 
-            for move_row, move_col in possible_captures:
-                if (0 <= field_row + move_row <= 7 and
-                        0 <= field_col + move_col <= 7):
-                    dest = self.board[field_row+move_row][field_col+move_col]
+            for mv_row, mv_col in all_captures:
+                if (0 <= sq_row + mv_row <= 7 and
+                        0 <= sq_col + mv_col <= 7):
+                    dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is not None and dest.colour != piece.colour:
-                        legal_moves.append((move_row, move_col))
+                        legal_moves.append((mv_row, mv_col))
 
             return legal_moves
 
-        if piece.type == 'k':
-            possible_moves = [(1, 1), (1, 0), (1, -1), (0, 1), 
-                              (0, -1), (-1, 1), (-1, 0), (-1, -1)]
-
-        if piece.type == 'n':
-            possible_moves = [(1, 2), (1, -2), (-1, 2), (-1, -2),
-                              (2, 1), (2, -1), (-2, 1), (-2, -1)]
-
         if piece.type in ('k', 'n'):              
-            for move_row, move_col in possible_moves:
-                if (0 <= field_row + move_row <= 7 and
-                        0 <= field_col + move_col <= 7):
-                    dest = self.board[field_row+move_row][field_col+move_col]
+            if piece.type == 'k':
+                all_moves = [(1, 1), (1, 0), (1, -1), (0, 1), 
+                                (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+            else:
+                all_moves = [(1, 2), (1, -2), (-1, 2), (-1, -2),
+                                (2, 1), (2, -1), (-2, 1), (-2, -1)]
+
+            for mv_row, mv_col in all_moves:
+                if (0 <= sq_row + mv_row <= 7 and
+                        0 <= sq_col + mv_col <= 7):
+                    dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is None or dest.colour != piece.colour:
-                        legal_moves.append((move_row, move_col))
+                        legal_moves.append((mv_row, mv_col))
             return legal_moves
 
         if piece.type in ('b', 'q'):
-            possible_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+            all_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
         
         if piece.type in ('r', 'q'):
-            possible_moves.extend([(1, 0), (-1, 0), (0, 1), (0, -1)])
+            all_moves.extend([(1, 0), (-1, 0), (0, 1), (0, -1)])
 
-        for move_row, move_col in possible_moves:
-            step_row, step_col = move_row, move_col
+        for mv_row, mv_col in all_moves:
+            step_row, step_col = mv_row, mv_col
             found_piece = False
-            while (0 <= field_row + move_row <= 7 and 
-                    0 <= field_col + move_col <= 7 and not found_piece):
-                dest = self.board[field_row+move_row][field_col+move_col]
+            while (0 <= sq_row + mv_row <= 7 and 
+                    0 <= sq_col + mv_col <= 7 and not found_piece):
+                dest = self.board[sq_row+mv_row][sq_col+mv_col]
                 if dest is None:
-                    legal_moves.append((move_row, move_col))
+                    legal_moves.append((mv_row, mv_col))
                 else:
                     found_piece = True
                     if dest.colour != piece.colour:
-                        legal_moves.append((move_row, move_col))
-                move_row += step_row
-                move_col += step_col
+                        legal_moves.append((mv_row, mv_col))
+                mv_row += step_row
+                mv_col += step_col
         return legal_moves
 
-    def show_legal_moves(self, field_str):
-        field_row, field_col = self.alg_to_own(field_str)
-        legal_moves = self.get_legal_moves(field_str)
-        highlit_fields = [(move_row + field_row, move_col + field_col) 
-                            for move_row, move_col in legal_moves]
-        # Modified copy of .__str__() method (ineffective)
-        b_data = ""
-        row_num = 8
-        field_light = True
-        for field_row, row in enumerate(self.board):
-            for field_col, field in enumerate(row):
-                if (field_row, field_col) in highlit_fields:
-                    if field is not None:
-                        if field.colour == 'w':
-                            b_data += COLOUR_HIGHLIGHT_W + str(field)
-                        else:
-                            b_data += COLOUR_HIGHLIGHT_B + str(field)
-                    else:
-                        b_data += COLOUR_HIGHLIGHT_W + ' '
-                elif field_light:
-                    if field is not None:
-                        if field.colour == 'w':
-                            b_data += COLOUR_LIGHT_W + str(field)
-                        else:
-                            b_data += COLOUR_LIGHT_B + str(field)
-                    else:
-                        b_data += COLOUR_LIGHT_W + ' '
-                else:
-                    if field is not None:
-                        if field.colour == 'w':
-                            b_data += COLOUR_DARK_W + str(field)
-                        else:
-                            b_data += COLOUR_DARK_B + str(field)
-                    else:
-                        b_data += COLOUR_DARK_W + ' '
+    def show_legal_moves(self, coords_str: str):
+        """Prints the output of get_legal_moves() to stdout."""
 
-                b_data += ' ' + COLOUR_ESC
-                field_light = not field_light
-            b_data += str(row_num) + '\n'
-            row_num -= 1
-            field_light = not field_light
-        b_data += ' A B C D E F G H'
-        print(b_data)
+        field_row, field_col = self.alg_to_num(coords_str)
+        legal_moves = self.get_legal_moves(coords_str)
+
+        highlit_squares = {(move_row + field_row, move_col + field_col) 
+                            for move_row, move_col in legal_moves}
+
+        print(self.__str__(highlit_squares=highlit_squares))
+    
+    def slm(self, *args):
+        """Alias for show_legal_moves()."""
+
+        return self.show_legal_moves(*args)
 
 
 class Game:
@@ -455,7 +465,25 @@ class Game:
 
 
 if __name__ == '__main__':
-    gm = Game()
-    while True:
-        print(gm.board)
-        gm.ply(input())
+    # gm = Game()
+    # while True:
+    #     print(gm.board)
+    #     gm.ply(input())
+    b = Board()
+    active = True
+    while active:
+        cmd, *args = input().split()
+        if cmd == 'q':
+            active = False
+        elif cmd == 'b':
+            print(b)
+        elif cmd in ('ad', 'a'):
+            b.ad(*args)
+        elif cmd in ('rm', 'r'):
+            b.rm(*args)
+        elif cmd in ('mv', 'm'):
+            b.mv(*args)
+        elif cmd in ('slm', 's'):
+            b.slm(*args)
+        else:
+            print('DEBUG: Unknown command')
