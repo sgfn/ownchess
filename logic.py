@@ -53,20 +53,20 @@ class Board:
         Will highlight certain squares if passed a set of them as an argument.
         """
         s = ""
-        sq_light = True # (0, 0) is a light square
+        sq_light = True  # (0, 0) is a light square
         for sq_row, row in enumerate(self.board):
             for sq_col, sq in enumerate(row):
                 # Colour selection
                 if (sq_row, sq_col) in highlit_squares:
-                    clr = self.CLR_H_W if (sq is not None and 
+                    clr = self.CLR_H_W if (sq is not None and
                                            sq.colour == 'w') else self.CLR_H_B
                 elif sq_light:
-                    clr = self.CLR_L_W if (sq is not None and 
+                    clr = self.CLR_L_W if (sq is not None and
                                            sq.colour == 'w') else self.CLR_L_B
                 else:
-                    clr = self.CLR_D_W if (sq is not None and 
+                    clr = self.CLR_D_W if (sq is not None and
                                            sq.colour == 'w') else self.CLR_D_B
-               
+
                 # If square occupied by a piece, print a corresponding letter
                 if sq is not None:
                     sq_str = str(sq)
@@ -106,7 +106,7 @@ class Board:
         Converts algebraic coordinates of a single square to numerical ones 
         used by the board. Raises ValueError for invalid strings.
         """
-        
+
         if len(coords_str) != 2:
             raise ValueError(f'Unrecognised coordinates: {coords_str}')
 
@@ -118,7 +118,7 @@ class Board:
 
         return (8 - rank, file_ord - 97)
 
-    def move_piece(self, from_str: str, to_str: str='') -> None:
+    def move_piece(self, from_str: str, to_str: str = '') -> None:
         """
         Moves a single piece on the board (algebraic coordinates). 
         Will handle two 2-character strings or one 4-character string.
@@ -142,8 +142,8 @@ class Board:
 
         return self.move_piece(*args)
 
-    def add_piece(self, colour: str, type: str='',
-                  coords_str: str='') -> None:
+    def add_piece(self, colour: str, type: str = '',
+                  coords_str: str = '') -> None:
         """
         Adds a piece to the board at the specified coordinates (algebraic).
         Will handle three separate strings or one 4-character string.
@@ -158,7 +158,7 @@ class Board:
             raise ValueError(f'Invalid piece colour: {colour}')
         if type not in ('p', 'b', 'n', 'r', 'q', 'k'):
             raise ValueError(f'Invalid piece type: {type}')
-        
+
         row, col = self.alg_to_num(coords_str)
 
         if self.board[row][col] is not None:
@@ -168,7 +168,7 @@ class Board:
 
     def ad(self, *args):
         """Alias for the add_piece() method."""
-        
+
         return self.add_piece(*args)
 
     def remove_piece(self, coords_str: str) -> None:
@@ -373,7 +373,7 @@ class Board:
                 if sq_row == 1:
                     all_moves.append((2, 0))
                 all_captures = [(1, -1), (1, 1)]
-            
+
             first_field_empty = False
             for mv_row, mv_col in all_moves:
                 if (0 <= sq_row + mv_row <= 7 and
@@ -396,13 +396,13 @@ class Board:
 
             return legal_moves
 
-        if piece.type in ('k', 'n'):              
+        if piece.type in ('k', 'n'):
             if piece.type == 'k':
-                all_moves = [(1, 1), (1, 0), (1, -1), (0, 1), 
-                                (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+                all_moves = [(1, 1), (1, 0), (1, -1), (0, 1),
+                             (0, -1), (-1, 1), (-1, 0), (-1, -1)]
             else:
                 all_moves = [(1, 2), (1, -2), (-1, 2), (-1, -2),
-                                (2, 1), (2, -1), (-2, 1), (-2, -1)]
+                             (2, 1), (2, -1), (-2, 1), (-2, -1)]
 
             for mv_row, mv_col in all_moves:
                 if (0 <= sq_row + mv_row <= 7 and
@@ -414,14 +414,14 @@ class Board:
 
         if piece.type in ('b', 'q'):
             all_moves = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
-        
+
         if piece.type in ('r', 'q'):
             all_moves.extend([(1, 0), (-1, 0), (0, 1), (0, -1)])
 
         for mv_row, mv_col in all_moves:
             step_row, step_col = mv_row, mv_col
             found_piece = False
-            while (0 <= sq_row + mv_row <= 7 and 
+            while (0 <= sq_row + mv_row <= 7 and
                     0 <= sq_col + mv_col <= 7 and not found_piece):
                 dest = self.board[sq_row+mv_row][sq_col+mv_col]
                 if dest is None:
@@ -440,11 +440,11 @@ class Board:
         field_row, field_col = self.alg_to_num(coords_str)
         legal_moves = self.get_legal_moves(coords_str)
 
-        highlit_squares = {(move_row + field_row, move_col + field_col) 
-                            for move_row, move_col in legal_moves}
+        highlit_squares = {(move_row + field_row, move_col + field_col)
+                           for move_row, move_col in legal_moves}
 
         print(self.__str__(highlit_squares=highlit_squares))
-    
+
     def slm(self, *args):
         """Alias for show_legal_moves()."""
 
