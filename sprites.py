@@ -23,7 +23,7 @@ class Sprite(ABC):
 class BoardSprite(Sprite):
     """Class for handling the board sprite."""
 
-    def __init__(self, ownchess_instance, clr_light, clr_dark, 
+    def __init__(self, ownchess_instance, clr_light, clr_dark,
                  clr_highlight) -> None:
         """Initialise the board sprite and set its position."""
 
@@ -51,7 +51,7 @@ class BoardSprite(Sprite):
     def update_highlit_squares(self, highlit_squares):
         """"""
 
-        self.highlit_squares = [pgm.Rect(col*100+200, row*100, 100, 100) 
+        self.highlit_squares = [pgm.Rect(col*100+200, row*100, 100, 100)
                                 for row, col in highlit_squares]
 
 
@@ -107,6 +107,5 @@ class TextSprite(Sprite):
         self.image = self.font.render(string, True, clr)
 
     def blitme(self) -> None:
-        
 
         self.screen.blit(self.image, self.rect)

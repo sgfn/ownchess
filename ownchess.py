@@ -7,6 +7,7 @@ from sprites import BoardSprite, PieceSprite, TextSprite
 from logic import Game
 from settings import Settings
 
+
 class OwnchessGUI:
     """Overall class to manage program assets and behaviour."""
 
@@ -18,39 +19,21 @@ class OwnchessGUI:
         pgm.init()
         self.settings = Settings()
         self.game = Game()
-        self.board = self.game.board
 
         # Create a screen object, the Pygame window
-        self.screen = pgm.display.set_mode((self.settings.scr_width, 
+        self.screen = pgm.display.set_mode((self.settings.scr_width,
                                             self.settings.scr_height))
-        
-        # Create sprites for the board and pieces
-        self.boardsprite = BoardSprite(self, self.settings.vis_sq_light_clr, 
-            self.settings.vis_sq_dark_clr, self.settings.vis_sq_highlight_clr)
-        self.piecesprites = [None for _ in range(32)]
-        for i in range(8):
-            for j, k in ((0, 0), (1, 1), (2, 6), (3, 7)):
-                piece = self.board.board[k][i]
-                self.piecesprites[j*8 + i] = PieceSprite(self, piece.colour, 
-                                                         piece.type, (k, i))
 
-        # Create the rank/file markings
-        self.textsprites = [None for _ in range(16)]
-        for i in range(8):
-            self.textsprites[i] = TextSprite(self, chr(97+i), 
-            self.settings.vis_sq_light_clr if i%2 == 0 else 
-            self.settings.vis_sq_dark_clr, 203+100*i, 782)
-            self.textsprites[i+8] = TextSprite(self, str(i+1), 
-            self.settings.vis_sq_light_clr if i%2 == 1 else
-            self.settings.vis_sq_dark_clr, 989, 700-100*i)
-        
         # Set the window title
         pgm.display.set_caption("ownchess-gui")
 
         # Set the icon
         self.icon = pgm.image.load('images/icon.bmp')
         pgm.display.set_icon(self.icon)
-        
+
+        # Prepare the board
+        self._setup_position('8/bRp2k2/2PNn3/3b4/8/1Q6/4K3/6r1 b - - 0 1')
+
     def run_program(self):
         """Start the main loop of the program."""
 
@@ -66,22 +49,22 @@ class OwnchessGUI:
         """Respond to keypresses and mouse events."""
 
         for event in pgm.event.get():
-                # Close the window and quit when asked to
-                if event.type == pgm.QUIT:
-                    sys.exit()
-                # Handle mouse button presses
-                elif event.type == pgm.MOUSEBUTTONDOWN:
-                    mouse_pos = pgm.mouse.get_pos()
-                    self._check_mousebuttondown_events(event, mouse_pos)
-                elif event.type == pgm.MOUSEBUTTONUP:
-                    self._check_mousebuttonup_events(event)
-    
+            # Close the window and quit when asked to
+            if event.type == pgm.QUIT:
+                sys.exit()
+            # Handle mouse button presses and releases
+            elif event.type == pgm.MOUSEBUTTONDOWN:
+                mouse_pos = pgm.mouse.get_pos()
+                self._check_mousebuttondown_events(event, mouse_pos)
+            elif event.type == pgm.MOUSEBUTTONUP:
+                self._check_mousebuttonup_events(event)
+
     def _check_mousebuttondown_events(self, event, mouse_pos):
         """Respond to mouse button presses."""
-        for piece_spr in self.piecesprites:
-            if piece_spr.rect.collidepoint(mouse_pos):
+        for p_spr in self.piecesprites:
+            if p_spr.rect.collidepoint(mouse_pos):
                 self.boardsprite.update_highlit_squares(
-                   self.board.get_legal_moves('', piece_spr.row, piece_spr.col))
+                    self.board.get_legal_moves('', p_spr.row, p_spr.col))
                 return None
         self.boardsprite.update_highlit_squares([])
 
@@ -89,7 +72,45 @@ class OwnchessGUI:
         """Respond to mouse button releases."""
 
         pass
-    
+
+    def _setup_position(self, fen_str: str = '') -> None:
+        """
+        Prepare the board for playing, from FEN or default if no FEN specified.
+        """
+        if fen_str != '':
+            self.game.from_FEN(fen_str)
+
+        self.board = self.game.board
+
+        # Create sprites for the board and rank/file markers
+        self.boardsprite = BoardSprite(self, self.settings.vis_sq_light_clr,
+                                       self.settings.vis_sq_dark_clr,
+                                       self.settings.vis_sq_highlight_clr)
+
+        self.textsprites = []
+        for i in range(8):
+            self.textsprites.extend((
+                TextSprite(
+                    self, chr(97+i), self.settings.vis_sq_light_clr
+                    if i % 2 == 0 else self.settings.vis_sq_dark_clr,
+                    203+100*i, 782
+                ),
+                TextSprite(
+                    self, str(i+1), self.settings.vis_sq_light_clr
+                    if i % 2 == 1 else self.settings.vis_sq_dark_clr,
+                    989, 700-100*i
+                )
+            ))
+
+        # Create sprites for the pieces
+        self.piecesprites = []
+        for i in range(64):
+            piece = self.board.board[i//8][i % 8]
+            if piece is not None:
+                self.piecesprites.append(
+                    PieceSprite(self, piece.colour, piece.type, (i//8, i % 8))
+                )
+
     def _update_screen(self) -> None:
         """Update and draw everything on the screen, and flip to the new one."""
 
@@ -97,7 +118,7 @@ class OwnchessGUI:
         self.screen.fill(self.settings.vis_bg_clr)
         # Draw the board
         self.boardsprite.blitme()
-        # Render the rank/file markings
+        # Render the rank/file markers
         [obj.blitme() for obj in self.textsprites]
         # Draw the pieces
         [obj.blitme() for obj in self.piecesprites]

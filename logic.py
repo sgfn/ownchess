@@ -347,7 +347,7 @@ class Board:
 
         return self.move_is_legal(colour, from_tpl, to_tpl)
 
-    def get_legal_moves(self, coords_str: str, sq_row=None, 
+    def get_legal_moves(self, coords_str: str, sq_row=None,
                         sq_col=None) -> List[Tuple[int, int]]:
         """
         Returns a list of legal moves.
@@ -395,8 +395,8 @@ class Board:
                     dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is not None and dest.colour != piece.colour:
                         legal_moves.append((mv_row, mv_col))
-            
-            legal_moves = [(move_row+sq_row, move_col+sq_col) 
+
+            legal_moves = [(move_row+sq_row, move_col+sq_col)
                            for move_row, move_col in legal_moves]
             return legal_moves
 
@@ -414,8 +414,8 @@ class Board:
                     dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is None or dest.colour != piece.colour:
                         legal_moves.append((mv_row, mv_col))
-            
-            legal_moves = [(move_row+sq_row, move_col+sq_col) 
+
+            legal_moves = [(move_row+sq_row, move_col+sq_col)
                            for move_row, move_col in legal_moves]
             return legal_moves
 
@@ -439,8 +439,8 @@ class Board:
                         legal_moves.append((mv_row, mv_col))
                 mv_row += step_row
                 mv_col += step_col
-        
-        legal_moves = [(move_row+sq_row, move_col+sq_col) 
+
+        legal_moves = [(move_row+sq_row, move_col+sq_col)
                        for move_row, move_col in legal_moves]
         return legal_moves
 
@@ -464,13 +464,36 @@ class Game:
     def __init__(self) -> None:
         self.board = Board()
         self.board.setup()
-        self.to_move = 'w'
-        self.b = self.board  # Alias for the board.
 
-    def ply(self, move_str) -> None:
+        self.to_move = 'w'
+        self.can_castle = 'KQkq'
+        self.ep_square = '-'
+        # self.halfmove_clock = 0
+        # self.fullmove_counter = 1
+
+    def ply(self, move_str: str) -> None:
         if self.board.mil(self.to_move, move_str) == 0:
             self.board.move_piece(move_str)
             self.to_move = 'b' if self.to_move == 'w' else 'w'
+
+    def from_FEN(self, fen_str: str) -> None:
+        """Import a position using its FEN string."""
+        
+        (rows, self.to_move, self.can_castle, self.ep_square,
+         *args) = fen_str.strip().split(' ')
+        self.board = Board()
+        for row, row_fen in enumerate(rows.split('/')):
+            col = 0
+            for char in row_fen:
+                # char is a number
+                if 49 <= ord(char) <= 56:
+                    col += int(char)
+                # char is a piece
+                else:
+                    self.board.board[row][col] = Piece('b' 
+                                                 if char.lower() == char
+                                                 else 'w', char.lower())
+                    col += 1
 
 
 if __name__ == '__main__':
@@ -478,21 +501,26 @@ if __name__ == '__main__':
     # while True:
     #     print(gm.board)
     #     gm.ply(input())
-    b = Board()
+    gm = Game()
     active = True
     while active:
         cmd, *args = input().split()
         if cmd == 'q':
             active = False
         elif cmd == 'b':
-            print(b)
+            print(gm.board)
         elif cmd in ('ad', 'a'):
-            b.ad(*args)
+            gm.board.ad(*args)
         elif cmd in ('rm', 'r'):
-            b.rm(*args)
+            gm.board.rm(*args)
         elif cmd in ('mv', 'm'):
-            b.mv(*args)
+            gm.board.mv(*args)
         elif cmd in ('slm', 's'):
-            b.slm(*args)
+            gm.board.slm(*args)
+        elif cmd in ('ff', 'fen', 'f'):
+            fen_str = ''
+            for arg in args:
+                fen_str += arg + ' '
+            gm.from_FEN(fen_str)
         else:
             print('DEBUG: Unknown command')
