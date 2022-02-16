@@ -347,13 +347,15 @@ class Board:
 
         return self.move_is_legal(colour, from_tpl, to_tpl)
 
-    def get_legal_moves(self, coords_str: str) -> List[Tuple[int, int]]:
+    def get_legal_moves(self, coords_str: str, sq_row=None, 
+                        sq_col=None) -> List[Tuple[int, int]]:
         """
         Returns a list of legal moves.
         Does not take checks into account.
         Castling, en passant TBA.
         """
-        sq_row, sq_col = self.alg_to_num(coords_str)
+        if sq_row is None:
+            sq_row, sq_col = self.alg_to_num(coords_str)
         piece = self.board[sq_row][sq_col]
         legal_moves = []
         all_moves = []
@@ -393,7 +395,9 @@ class Board:
                     dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is not None and dest.colour != piece.colour:
                         legal_moves.append((mv_row, mv_col))
-
+            
+            legal_moves = [(move_row+sq_row, move_col+sq_col) 
+                           for move_row, move_col in legal_moves]
             return legal_moves
 
         if piece.type in ('k', 'n'):
@@ -410,6 +414,9 @@ class Board:
                     dest = self.board[sq_row+mv_row][sq_col+mv_col]
                     if dest is None or dest.colour != piece.colour:
                         legal_moves.append((mv_row, mv_col))
+            
+            legal_moves = [(move_row+sq_row, move_col+sq_col) 
+                           for move_row, move_col in legal_moves]
             return legal_moves
 
         if piece.type in ('b', 'q'):
@@ -432,16 +439,18 @@ class Board:
                         legal_moves.append((mv_row, mv_col))
                 mv_row += step_row
                 mv_col += step_col
+        
+        legal_moves = [(move_row+sq_row, move_col+sq_col) 
+                       for move_row, move_col in legal_moves]
         return legal_moves
 
     def show_legal_moves(self, coords_str: str):
         """Prints the output of get_legal_moves() to stdout."""
 
-        field_row, field_col = self.alg_to_num(coords_str)
+        # field_row, field_col = self.alg_to_num(coords_str)
         legal_moves = self.get_legal_moves(coords_str)
 
-        highlit_squares = {(move_row + field_row, move_col + field_col)
-                           for move_row, move_col in legal_moves}
+        highlit_squares = set(legal_moves)
 
         print(self.__str__(highlit_squares=highlit_squares))
 

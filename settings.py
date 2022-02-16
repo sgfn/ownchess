@@ -1,11 +1,15 @@
 class Settings:
-    """A class to store all settings for ownchess."""
+    """A class to store all settings for ownchess-gui."""
 
     def __init__(self):
-        """Initialise the game's settings."""
+        """Initialise the settings."""
+
         # Screen settings
-        self.screen_width = 1200
-        self.screen_height = 800
+        self.scr_width = 1200
+        self.scr_height = 800
 
         # Visual settings
-        self.visual_bg_colour = '#CCCCCC'
+        self.vis_bg_clr = '#222222'
+        self.vis_sq_light_clr = '#F0DABA'
+        self.vis_sq_dark_clr = '#B59064'
+        self.vis_sq_highlight_clr = '#738355'
