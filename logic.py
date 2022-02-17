@@ -3,11 +3,22 @@ from typing import Tuple, List
 
 class Piece:
     def __init__(self, colour: str, type: str) -> None:
+        """Create a piece object with the necessary attributes."""
+
+        if colour not in ('w', 'b'):
+            raise ValueError(f'Invalid piece colour: {colour}')
+        if type not in ('p', 'b', 'n', 'r', 'q', 'k'):
+            raise ValueError(f'Invalid piece type: {type}')
+
         self.colour = colour
         self.type = type
+        # self.row, self.col = row, col
+        # self.av_moves = []
 
     def __str__(self) -> str:
-        return self.type.capitalize() if self.colour == 'w' else self.type
+        """Get a string representing the piece in FEN notation."""
+        
+        return self.type.upper() if self.colour == 'w' else self.type
 
 
 class Board:
@@ -45,7 +56,22 @@ class Board:
         Creates a Board object with an empty 8x8 chessboard.
         Use setup() to prepare it for a game.
         """
-        self.board = [[None for _ in range(8)] for _ in range(8)]
+        self._chessboard = [[None for _ in range(8)] for _ in range(8)]
+
+        # Create variables to hold board properties
+        self._to_move = None
+        self._can_castle = None
+        self._ep_square = None
+        self._halfmove_clock = None
+        self._fullmove_counter = None
+
+        # Create piece lists
+        self._white_pieces = []
+        self._black_pieces = []
+        
+        # Create helper variables containing the king's positions
+        self._white_king_coords_tpl = None
+        self._black_king_coords_tpl = None
 
     def __str__(self, highlit_squares=set()) -> str:
         """
@@ -54,7 +80,7 @@ class Board:
         """
         s = ""
         sq_light = True  # (0, 0) is a light square
-        for sq_row, row in enumerate(self.board):
+        for sq_row, row in enumerate(self._chessboard):
             for sq_col, sq in enumerate(row):
                 # Colour selection
                 if (sq_row, sq_col) in highlit_squares:
@@ -89,17 +115,44 @@ class Board:
 
         return self.__str__(*args)
 
-    def setup(self) -> None:
-        """Sets the board up for a game."""
+    def setup(self, fen: str = 
+        'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1') -> None:
+        """
+        Set the board up for a game. 
+        Will import the position from FEN if specified, otherwise default.
+        Does not check whether the FEN string is correct.
+        """
+        
+        # Set the starting properties
+        (rows, self._to_move, self._can_castle, self._ep_square, 
+        self._halfmove_clock, self._fullmove_counter) = fen.strip().split(' ')
+        
+        # Create the pieces and insert them on the chessboard
+        for row, row_fen in enumerate(rows.split('/')):
+            col = 0
+            for char in row_fen:
+                # char is a number
+                if 49 <= ord(char) <= 56:
+                    col += int(char)
+                # char is a piece
+                else:
+                    colour = 'b' if char.lower() == char else 'w'
+                    if colour == 'w':
+                        piece = Piece('w', char.lower())
+                        self._white_pieces.append(piece)
+                    else:
+                        piece = Piece('b', char)
+                        self._black_pieces.append(piece)
+                        
+                    self._chessboard[row][col] = piece
+                    if char.lower == 'k':
+                        if colour == 'w':
+                            self._white_king_coords_tpl = (row, col)
+                        else:
+                            self._black_king_coords_tpl = (row, col)
 
-        initial = ('r', 'n', 'b', 'q', 'k', 'b', 'n', 'r')
-        for ind, el in enumerate(initial):
-            self.board[0][ind] = Piece('b', el)
-            self.board[1][ind] = Piece('b', 'p')
-            self.board[6][ind] = Piece('w', 'p')
-            self.board[7][ind] = Piece('w', el)
-        for i in range(2, 6):
-            self.board[i] = [None for _ in range(8)]
+                    col += 1
+        
 
     def alg_to_num(self, coords_str: str) -> Tuple[int, int]:
         """
@@ -130,12 +183,12 @@ class Board:
         from_row, from_col = self.alg_to_num(from_str)
         to_row, to_col = self.alg_to_num(to_str)
 
-        if self.board[from_row][from_col] is None:
+        if self._chessboard[from_row][from_col] is None:
             print(f'DEBUG: Square {from_str} is empty')
             return None
 
-        self.board[to_row][to_col] = self.board[from_row][from_col]
-        self.board[from_row][from_col] = None
+        self._chessboard[to_row][to_col] = self._chessboard[from_row][from_col]
+        self._chessboard[from_row][from_col] = None
 
     def mv(self, *args):
         """Alias for the move_piece() method."""
@@ -161,10 +214,10 @@ class Board:
 
         row, col = self.alg_to_num(coords_str)
 
-        if self.board[row][col] is not None:
+        if self._chessboard[row][col] is not None:
             print(f'DEBUG: Square {coords_str} is occupied, replacing')
 
-        self.board[row][col] = Piece(colour, type)
+        self._chessboard[row][col] = Piece(colour, type)
 
     def ad(self, *args):
         """Alias for the add_piece() method."""
@@ -176,10 +229,10 @@ class Board:
 
         row, col = self.alg_to_num(coords_str)
 
-        if self.board[row][col] is None:
+        if self._chessboard[row][col] is None:
             print(f'DEBUG: Square {coords_str} is empty')
 
-        self.board[row][col] = None
+        self._chessboard[row][col] = None
 
     def rm(self, *args):
         """Alias for remove_piece()."""
@@ -226,8 +279,8 @@ class Board:
         mv_r = to_r - fr_r
         mv_c = to_c - fr_c
 
-        piece = self.board[fr_r][fr_c]
-        dest = self.board[to_r][to_c]
+        piece = self._chessboard[fr_r][fr_c]
+        dest = self._chessboard[to_r][to_c]
 
         # Check whether the field is empty
         if piece is None:
@@ -253,7 +306,7 @@ class Board:
 
         if piece.type == 'q':
             if mv_r == 0 or mv_c == 0 or abs(mv_r) == abs(mv_c):
-                if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                if collision_checker(self._chessboard, fr_r, fr_c, to_r, to_c):
                     return 0
                 else:
                     print('DEBUG: Another piece in the way')
@@ -264,7 +317,7 @@ class Board:
 
         if piece.type == 'r':
             if mv_r == 0 or mv_c == 0:
-                if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                if collision_checker(self._chessboard, fr_r, fr_c, to_r, to_c):
                     return 0
                 else:
                     print('DEBUG: Another piece in the way')
@@ -275,7 +328,7 @@ class Board:
 
         if piece.type == 'b':
             if abs(mv_r) == abs(mv_c):
-                if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+                if collision_checker(self._chessboard, fr_r, fr_c, to_r, to_c):
                     return 0
                 else:
                     print('DEBUG: Another piece in the way')
@@ -308,7 +361,7 @@ class Board:
                 print('DEBUG: Pawns capture diagonally')
                 return 6
 
-            if collision_checker(self.board, fr_r, fr_c, to_r, to_c):
+            if collision_checker(self._chessboard, fr_r, fr_c, to_r, to_c):
                 return 0
             else:
                 print('DEBUG: Another piece in the way')
@@ -356,7 +409,7 @@ class Board:
         """
         if sq_row is None:
             sq_row, sq_col = self.alg_to_num(coords_str)
-        piece = self.board[sq_row][sq_col]
+        piece = self._chessboard[sq_row][sq_col]
         legal_moves = []
         all_moves = []
 
@@ -380,7 +433,7 @@ class Board:
             for mv_row, mv_col in all_moves:
                 if (0 <= sq_row + mv_row <= 7 and
                         0 <= sq_col + mv_col <= 7):
-                    dest = self.board[sq_row+mv_row][sq_col+mv_col]
+                    dest = self._chessboard[sq_row+mv_row][sq_col+mv_col]
                     if dest is None:
                         if abs(mv_row) == 1:
                             first_field_empty = True
@@ -392,7 +445,7 @@ class Board:
             for mv_row, mv_col in all_captures:
                 if (0 <= sq_row + mv_row <= 7 and
                         0 <= sq_col + mv_col <= 7):
-                    dest = self.board[sq_row+mv_row][sq_col+mv_col]
+                    dest = self._chessboard[sq_row+mv_row][sq_col+mv_col]
                     if dest is not None and dest.colour != piece.colour:
                         legal_moves.append((mv_row, mv_col))
 
@@ -411,7 +464,7 @@ class Board:
             for mv_row, mv_col in all_moves:
                 if (0 <= sq_row + mv_row <= 7 and
                         0 <= sq_col + mv_col <= 7):
-                    dest = self.board[sq_row+mv_row][sq_col+mv_col]
+                    dest = self._chessboard[sq_row+mv_row][sq_col+mv_col]
                     if dest is None or dest.colour != piece.colour:
                         legal_moves.append((mv_row, mv_col))
 
@@ -430,7 +483,7 @@ class Board:
             found_piece = False
             while (0 <= sq_row + mv_row <= 7 and
                     0 <= sq_col + mv_col <= 7 and not found_piece):
-                dest = self.board[sq_row+mv_row][sq_col+mv_col]
+                dest = self._chessboard[sq_row+mv_row][sq_col+mv_col]
                 if dest is None:
                     legal_moves.append((mv_row, mv_col))
                 else:
@@ -459,68 +512,53 @@ class Board:
 
         return self.show_legal_moves(*args)
 
+    def is_in_check(self, player_colour: str = '') -> bool:
+        """
+        Test whether the specified player (default: next to move) is in check.
+        """
+        if player_colour == '':
+            player_colour = self._to_move
 
-class Game:
-    def __init__(self) -> None:
-        self.board = Board()
-        self.board.setup()
+        if player_colour == 'w':
+            k_row, k_col = self._white_king_coords_tpl
+        else:
+            k_row, k_col = self._black_king_coords_tpl
 
-        self.to_move = 'w'
-        self.can_castle = 'KQkq'
-        self.ep_square = '-'
-        # self.halfmove_clock = 0
-        # self.fullmove_counter = 1
-
-    def ply(self, move_str: str) -> None:
-        if self.board.mil(self.to_move, move_str) == 0:
-            self.board.move_piece(move_str)
-            self.to_move = 'b' if self.to_move == 'w' else 'w'
-
-    def from_FEN(self, fen_str: str) -> None:
-        """Import a position using its FEN string."""
+        knight_fields = ((1, 2), (1, -2), (-1, 2), (-1, -2), 
+                         (2, 1), (2, -1), (-2, 1), (-2, -1))
         
-        (rows, self.to_move, self.can_castle, self.ep_square,
-         *args) = fen_str.strip().split(' ')
-        self.board = Board()
-        for row, row_fen in enumerate(rows.split('/')):
-            col = 0
-            for char in row_fen:
-                # char is a number
-                if 49 <= ord(char) <= 56:
-                    col += int(char)
-                # char is a piece
-                else:
-                    self.board.board[row][col] = Piece('b' 
-                                                 if char.lower() == char
-                                                 else 'w', char.lower())
-                    col += 1
+        for mv_row, mv_col in knight_fields:
+            dest_row, dest_col = k_row + mv_row, k_col + mv_col
+            if 0 <= dest_row <= 7 and 0 <= dest_col <= 7:
+                piece = self._chessboard[dest_row][dest_col]
+                if (piece is not None and piece.type == 'n' 
+                    and piece.colour != player_colour):
+                    return True
+        
 
+        
 
 if __name__ == '__main__':
-    # gm = Game()
-    # while True:
-    #     print(gm.board)
-    #     gm.ply(input())
-    gm = Game()
+    board = Board()
     active = True
     while active:
         cmd, *args = input().split()
         if cmd == 'q':
             active = False
         elif cmd == 'b':
-            print(gm.board)
+            print(board)
         elif cmd in ('ad', 'a'):
-            gm.board.ad(*args)
+            board.ad(*args)
         elif cmd in ('rm', 'r'):
-            gm.board.rm(*args)
+            board.rm(*args)
         elif cmd in ('mv', 'm'):
-            gm.board.mv(*args)
+            board.mv(*args)
         elif cmd in ('slm', 's'):
-            gm.board.slm(*args)
+            board.slm(*args)
         elif cmd in ('ff', 'fen', 'f'):
             fen_str = ''
             for arg in args:
                 fen_str += arg + ' '
-            gm.from_FEN(fen_str)
+            board.setup(fen_str)
         else:
             print('DEBUG: Unknown command')

@@ -4,7 +4,7 @@ from time import sleep
 import pygame as pgm
 
 from sprites import BoardSprite, PieceSprite, TextSprite
-from logic import Game
+from logic import Board
 from settings import Settings
 
 
@@ -18,7 +18,7 @@ class OwnchessGUI:
         # Initialise the Pygame module and create the necessary objects
         pgm.init()
         self.settings = Settings()
-        self.game = Game()
+        self.board = Board()
 
         # Create a screen object, the Pygame window
         self.screen = pgm.display.set_mode((self.settings.scr_width,
@@ -32,7 +32,8 @@ class OwnchessGUI:
         pgm.display.set_icon(self.icon)
 
         # Prepare the board
-        self._setup_position('8/bRp2k2/2PNn3/3b4/8/1Q6/4K3/6r1 b - - 0 1')
+        test_fen_1 = '8/bRp2k2/2PNn3/3b4/8/1Q6/4K3/6r1 b - - 0 1'
+        self._setup_position()
 
     def run_program(self):
         """Start the main loop of the program."""
@@ -70,17 +71,14 @@ class OwnchessGUI:
 
     def _check_mousebuttonup_events(self, event):
         """Respond to mouse button releases."""
-
+        
         pass
 
     def _setup_position(self, fen_str: str = '') -> None:
         """
         Prepare the board for playing, from FEN or default if no FEN specified.
         """
-        if fen_str != '':
-            self.game.from_FEN(fen_str)
-
-        self.board = self.game.board
+        self.board.setup(fen_str) if fen_str else self.board.setup()
 
         # Create sprites for the board and rank/file markers
         self.boardsprite = BoardSprite(self, self.settings.vis_sq_light_clr,
@@ -105,7 +103,7 @@ class OwnchessGUI:
         # Create sprites for the pieces
         self.piecesprites = []
         for i in range(64):
-            piece = self.board.board[i//8][i % 8]
+            piece = self.board._chessboard[i//8][i % 8]
             if piece is not None:
                 self.piecesprites.append(
                     PieceSprite(self, piece.colour, piece.type, (i//8, i % 8))

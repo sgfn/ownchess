@@ -46,14 +46,16 @@ class BoardSprite(Sprite):
         for rect in self.rects_small:
             pgm.draw.rect(self.screen, self.colour_light, rect)
         for rect in self.highlit_squares:
-            pgm.draw.rect(self.screen, self.colour_highlight, rect)
+            # pgm.draw.rect(self.screen, '#00000000', rect)
+            pgm.draw.circle(self.screen, self.colour_highlight, rect.center, 25)
+
 
     def update_highlit_squares(self, highlit_squares):
         """"""
 
         self.highlit_squares = [pgm.Rect(col*100+200, row*100, 100, 100)
                                 for row, col in highlit_squares]
-
+        
 
 class PieceSprite(Sprite):
     """Class for handling the piece sprite."""
