@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Set
 
 
 class Square:
@@ -41,30 +41,46 @@ class Board:
     CLR_H_B = '\x1b[0;30;45m'
     CLR_H_W = '\x1b[0;37;45m'
 
-    # Default FEN string
-    FEN_DEF = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    # FEN string of initial position
+    FEN_INIT = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+
+    # Strings for interactive command prompt mode
+    LOGO_STR = """
+       #   #
+      ##########                                    #
+    ## ############                                 #
+   ######### ########       ##   #   #  ###    ###  ###    ##     ##   ##
+  # #####   ##########     #  #  #   #  #  #  #     #  #  #  #   #    #
+  ####      ###########    #  #  # # #  #  #  #     #  #  ##      #    #
+            ############    ##    # #   #  #   ###  #  #   ###  ###  ###
+           #############
+          ##############       b  o  a  r  d        m  o  d  u  l  e\n"""
+    HELP_STR = """Available commands:\n\tq - exit\n\th - show this message
+\tb - show board\n\tf [FEN] - set FEN, initial position if no FEN given
+\tf get - get FEN of current position
+\tl [square] - show legal moves from set square, print all if no square given
+\tc - is current player in check\n\tm <square_from> <square_to> - make a move"""
 
     # Board coordinates:
-    #              C O L U M N S
+    #                   C O L U M N S
     #           0   1   2   3   4   5   6   7
-    #    8                                 63   7
-    #    7                                      6
-    #  r 6                                      5  R
-    #  a 5                                      4  O
-    #  n 4                                      3  W
-    #  k 3                                      2  S - multiply by 8
-    #  s 2      8   9  10  11   ...             1
-    #    1      0   1   2   3   4   5   6   7   0
+    #
+    #    8                                 63       7
+    #    7                                          6
+    #  r 6                                          5  R
+    #  a 5                                          4  O
+    #  n 4                                          3  W
+    #  k 3                                          2  S - multiply by 8
+    #  s 2      8   9  10  11   ...                 1
+    #    1      0   1   2   3   4   5   6   7       0
+    #
     #           A   B   C   D   E   F   G   H
-    #               f i l e s
+    #                    f i l e s
 
     def __init__(self) -> None:
-        """
-        Creates a Board object with an empty 8x8 chessboard.
-        Use import_fen() to prepare it for a game.
-        """
-        self._chessboard = [Square() for _ in range(64)]
+        """Create a Board object with an 8x8 chessboard (initial position)."""
 
+        self._chessboard = [Square() for _ in range(64)]
         # Create variables to hold board properties
         self._to_move = '-'
         self._can_castle = '-'
@@ -79,14 +95,16 @@ class Board:
         # Create helper properties containing the king's positions
         self._w_king_sq = -1
         self._b_king_sq = -1
+        # Set initial pos at start seeing as one would almost always do this
+        self.set_fen()
 
     def __str__(self, highlit_squares=set()) -> str:
         """
-        Returns a string for printing the board (White's perspective) to stdout.
+        Return a string for printing the board (White's perspective) to stdout.
         Will highlight certain squares if passed a set of them as an argument.
         """
         s = ""
-        sq_light = True  # 56 is a light square
+        sq_light = True  # 56 (top left) is a light square
         for sq_row in range(7, -1, -1):
             for sq_col in range(8):
                 sq = self._chessboard[sq_row*8 + sq_col]
@@ -110,18 +128,38 @@ class Board:
         return s
 
     def __repr__(self, *args) -> str:
-        """Links to __str__() as some printing functions call __repr__()."""
+        """Link to __str__() as some printing functions call __repr__()."""
 
         return self.__str__(*args)
 
-    def import_fen(self, fen: str = '') -> None:
+    def alg_to_num(self, coords_str: str) -> int:
         """
-        Set the board up for a game (from FEN).
-        Does not check whether the FEN string is correct.
+        Convert algebraic notation of a square to a corresponding number 
+        used by the board.
         """
-        # Set default FEN if not specified
+        if len(coords_str) != 2:
+            return -1
+        rank, file_ord = int(coords_str[1]), ord(coords_str[0].lower())
+        # file 'a' -> col 0, ord('a') = 97
+        return (rank - 1) * 8 + (file_ord - 97)
+
+    def num_to_alg(self, sq_num: int) -> str:
+        """Convert square number used by the board to algebraic notation."""
+
+        if sq_num == -1:
+            return '-'
+        rank = sq_num // 8 + 1
+        file = chr(sq_num % 8 + 97)
+        return f'{file}{rank}'
+
+    def set_fen(self, fen: str = '') -> None:
+        """
+        Set the board up according to FEN (initial position if FEN 
+        not specified). Does not check whether the FEN string is correct.
+        """
+        # Set initial position FEN if not specified
         if fen == '':
-            fen = Board.FEN_DEF
+            fen = Board.FEN_INIT
 
         # Clear the board
         for square in self._chessboard:
@@ -149,81 +187,44 @@ class Board:
                     colour = 'b' if char.lower() == char else 'w'
                     piece = char.lower()
                     sq_num = (7-f_row)*8 + col
+                    # Update king squares
                     if piece == 'k':
                         self._update_king(colour, sq_num)
                     self._chessboard[sq_num].set_sq(colour, piece)
                     col += 1
-        
-    def alg_to_num(self, coords_str: str) -> int:
+
+    def get_fen(self) -> str:
         """
-        Converts algebraic coordinates of a single square to numerical ones 
-        used by the board.
+        Return a FEN string of the current position.
+        Issue: returns EP square even if EP not possible (should be '-').
         """
-        if len(coords_str) != 2:
-            return -1
-        rank, file_ord = int(coords_str[1]), ord(coords_str[0].lower())
-        # file 'a' -> col 0, ord('a') = 97
-        return (rank - 1) * 8 + (file_ord - 97)
-
-    def move_piece(self, from_num: int, to_num: int = -1, 
-                   promote_to: str = 'q') -> int:
-        """
-        Moves/removes a single piece (numerical coordinates). Returns 1 (pawn 
-        move), 2 (capture) if move resets the halfmove counter; 0 otherwise.
-        """
-        returnval = 0
-        from_sq = self._chessboard[from_num]
-
-        if from_sq._colour == 'e':
-            print(f'DEBUG: Square {from_num} is empty')
-            return None
-
-        if from_sq._piece == 'k':
-            self._update_king(from_sq._colour, to_num)
-        # Not checking if target square contains a king, might be needed later
-
-        if to_num != -1:
-            if self._chessboard[to_num]._colour not in ('e', from_sq._colour):
-                returnval = 2
-
-        if from_sq._piece == 'p':
-            # Handling promotions
-            # DON'T WORK AS INTENDED RIGHT NOW
-            pr_row = 7 if from_sq._colour == 'w' else 0
-            if to_num // 8 == pr_row:
-                self.add_piece(from_sq._colour, promote_to, to_num)
-                to_num = -1
-            
-            # Handling en passant
-            elif to_num == self._ep_square:
-                if to_num > from_num:
-                    self._chessboard[to_num - 8].set_sq()
+        s = ""
+        for sq_row in range(7, -1, -1):
+            num = 0
+            for sq_col in range(8):
+                sq = self._chessboard[sq_row*8 + sq_col]
+                if sq._colour == 'e':
+                    num += 1
                 else:
-                    self._chessboard[to_num + 8].set_sq()
-            returnval = 1
+                    if num != 0:
+                        s += str(num)
+                    s += str(sq)
+                    num = 0
+            if num != 0:
+                s += str(num)
+            if sq_row != 0:
+                s += '/'
+        
+        tomv, cncs, epsq, hmcl, fmct = (self._to_move, self._can_castle, 
+        self._ep_square, self._halfmove_clock, self._fullmove_counter)
+        s = f'{s} {tomv} {cncs} {self.num_to_alg(epsq)} {hmcl} {fmct}'
 
-        if to_num != -1:
-            self._chessboard[to_num].set_sq(from_sq._colour, from_sq._piece)
-        from_sq.set_sq()
-
-        return returnval
-
-    def add_piece(self, colour: str, piece: str, sq_num: int) -> None:
-        """Adds a piece at the specified coordinates (numerical)."""
-
-        to_sq = self._chessboard[sq_num]
-        if to_sq._colour != 'e':
-            print(f'DEBUG: Square {sq_num} is occupied, replacing')
-
-        if piece == 'k':
-            self._update_king(colour, sq_num)
-
-        to_sq.set_sq(colour, piece)
+        return s
 
     def get_pseudolegal_moves(self, sq_num: int) -> List[int]:
         """
-        Returns a list of squares available for pseudolegal moves.
-        Does not take checks into account.
+        Return a list of squares available as targets of pseudolegal moves 
+        (moves which might leave the player in check) from selected square.
         Castling TBA.
         """
         from_sq = self._chessboard[sq_num]
@@ -308,31 +309,23 @@ class Board:
 
         return pseudolegal_moves
 
-    def show_legal_moves(self, sq_num: int) -> None:
-        """Prints the output of get_legal_moves() to stdout."""
-        legal_moves = self.get_legal_moves(sq_num)
-        print(self.__str__(highlit_squares=set(legal_moves)))
+    def is_in_check(self) -> bool:
+        """Test whether the player to move is in check."""
 
-    def is_in_check(self, king_colour: str = '') -> bool:
-        """
-        Test whether the specified player (default: next to move) is in check.
-        """
-        if king_colour == '':
-            king_colour = self._to_move
-
-        if king_colour == 'w':
+        k_colour = self._to_move
+        if k_colour == 'w':
             k_row, k_col = self._w_king_sq // 8, self._w_king_sq % 8
         else:
             k_row, k_col = self._b_king_sq // 8, self._b_king_sq % 8
 
         # Pawn checks
-        pawn_move = 1 if king_colour == 'w' else -1
+        pawn_move = 1 if k_colour == 'w' else -1
         pawn_moves = [(pawn_move, -1), (pawn_move, 1)]
         for mv_row, mv_col in pawn_moves:
             atk_row, atk_col = k_row + mv_row, k_col + mv_col
             if 0 <= atk_row <= 7 and 0 <= atk_col <= 7:
                 atk_sq = self._chessboard[atk_row*8 + atk_col]
-                if (atk_sq._colour != king_colour and atk_sq._piece == 'p'):
+                if (atk_sq._colour != k_colour and atk_sq._piece == 'p'):
                     return True
 
         # "King checks" - illegal moves where both kings are on adjacent squares
@@ -342,7 +335,7 @@ class Board:
             atk_row, atk_col = k_row + mv_row, k_col + mv_col
             if 0 <= atk_row <= 7 and 0 <= atk_col <= 7:
                 atk_sq = self._chessboard[atk_row*8 + atk_col]
-                if (atk_sq._colour != king_colour and atk_sq._piece == 'k'):
+                if (atk_sq._colour != k_colour and atk_sq._piece == 'k'):
                     return True
 
         # Knight checks
@@ -352,7 +345,7 @@ class Board:
             atk_row, atk_col = k_row + mv_row, k_col + mv_col
             if 0 <= atk_row <= 7 and 0 <= atk_col <= 7:
                 atk_sq = self._chessboard[atk_row*8 + atk_col]
-                if (atk_sq._colour != king_colour and atk_sq._piece == 'n'):
+                if (atk_sq._colour != k_colour and atk_sq._piece == 'n'):
                     return True
         
         # Bishop, rook and queen (ray piece) checks
@@ -363,7 +356,7 @@ class Board:
             while 0 <= atk_row <= 7 and 0 <= atk_col <= 7:
                 atk_num = atk_row*8 + atk_col
                 atk_sq = self._chessboard[atk_num]
-                if (atk_sq._colour != king_colour and atk_sq._piece in p_str):
+                if (atk_sq._colour != k_colour and atk_sq._piece in p_str):
                     return True
                 elif atk_sq._colour != 'e':
                     break
@@ -372,38 +365,37 @@ class Board:
 
         return False
       
-    def _update_king(self, colour: str, sq_num: int) -> None:
-        """Update variables containing information about king positions."""
-        
-        if colour == 'b':
-            self._b_king_sq = sq_num
-        else:
-            self._w_king_sq = sq_num
-
-    def get_legal_moves(self, from_num: int) -> List[int]:
+    def get_legal_moves(self, from_num: int) -> Set[int]:
         """
-        Returns a list of squares available for legal moves.
-        Castling TBA.
+        Return a set of squares available as targets of legal moves 
+        from selected square. Castling TBA.
         """
-
         pseudolegal_moves = self.get_pseudolegal_moves(from_num)
-        legal_moves = []
+        legal_moves = set()
+
         from_sq = self._chessboard[from_num]
         from_colour = from_sq._colour
         from_piece = from_sq._piece
 
         if from_colour != self._to_move:
-            return []
+            return legal_moves
 
         for to_num in pseudolegal_moves:
             to_sq = self._chessboard[to_num]
             to_piece = to_sq._piece
-            self.move_piece(from_num, to_num)
-            if not self.is_in_check(from_colour):
-                legal_moves.append(to_num)
-            if to_piece != 'e':               
+
+            # Make the move and see whether this leaves the king in check
+            self._move_piece(from_num, to_num)
+            if not self.is_in_check():
+                legal_moves.add(to_num)
+
+            # Unmake the move - REFACTOR INTO A SEPARATE FUNCTION
+            # Move was a standard capture
+            if to_piece != 'e':
                 from_sq.set_sq(from_colour, from_piece)
                 to_sq.set_sq('b' if from_colour == 'w' else 'w', to_piece)
+            
+            # Move was either en passant or not a capture
             else:
                 # Handling en passant
                 if from_piece == 'p' and to_num == self._ep_square:
@@ -413,9 +405,31 @@ class Board:
                     else:
                         self._chessboard[to_num + 8].set_sq('b' if 
                         from_colour == 'w' else 'w', to_piece)
-                self.move_piece(to_num, from_num)
+                self._move_piece(to_num, from_num)
+            
+            # Cleaning up after unmaking a promotion
+            if from_piece != from_sq._piece:
+                from_sq._piece = from_piece
         
         return legal_moves
+
+    def show_legal_moves(self, sq_num: int) -> None:
+        """Print the output of get_legal_moves() to stdout."""
+
+        legal_moves = self.get_legal_moves(sq_num)
+        print(self.__str__(highlit_squares=legal_moves))
+    
+    def get_all_legal_moves(self) -> Dict[int, Set[int]]:
+        """Return a dict of all legal moves in position."""
+
+        all_legal_moves = {}
+        # Can be optimised by using piece lists
+        for sq_num, square in enumerate(self._chessboard):
+            if square._colour == self._to_move:
+                legal_moves = self.get_legal_moves(sq_num)
+                if len(legal_moves) != 0:
+                    all_legal_moves[sq_num] = legal_moves
+        return all_legal_moves
 
     def make_move(self, from_num: int, to_num: int, 
                   promote_to: str = 'q') -> None:
@@ -440,8 +454,8 @@ class Board:
         else:
             self._ep_square = -1
 
-        mp_returnval = self.move_piece(from_num, to_num, promote_to)
-
+        # Move the piece and check whether to reset the halfmove clock
+        mp_returnval = self._move_piece(from_num, to_num, promote_to)
         if mp_returnval > 0:
             self._halfmove_clock = 0
         else:
@@ -452,32 +466,122 @@ class Board:
 
         self._to_move = 'b' if self._to_move == 'w' else 'w'
 
+    def interactive_mode(self) -> None:
+        """Work with the board in an interactive command prompt mode."""
+
+        print("Interactive command prompt mode\nType 'h' for help, 'q' to quit")
+        active = True
+        while active:
+            cmd, *args = input().strip().split()
+            if cmd in ('q', 'qqq', 'quit', 'exit'):
+                active = False
+            elif cmd in ('h', 'help'):
+                print(Board.HELP_STR)
+            elif cmd in ('b', 'board'):
+                print(self)
+            elif cmd in ('c', 'iic', 'check'):
+                print(self.is_in_check())
+
+            elif cmd in ('f', 'fen'):
+                if len(args) == 1 and args[0] == 'get':
+                    print(self.get_fen())
+                else:
+                    fen = ''
+                    for arg in args:
+                        fen += arg + ' '
+                    self.set_fen(fen)
+
+            elif cmd in ('l', 'slm', 'legal'):
+                if len(args) == 1:
+                    self.show_legal_moves(self.alg_to_num(*args))
+                else:
+                    dct = self.get_all_legal_moves()
+                    for key, val in dct.items():
+                        print(self.num_to_alg(key), end=': ')
+                        for i, v in enumerate(val):
+                            print(self.num_to_alg(v), 
+                                  end=', ' if i != len(val)-1 else '\n')
+            
+            elif cmd in ('m', 'mm', 'move'):
+                from_num = self.alg_to_num(args[0])
+                to_num = self.alg_to_num(args[1])
+                promote_to = 'q'
+                if len(args) > 2:
+                    promote_to = args[2]
+                self.make_move(from_num, to_num, promote_to)
+
+            else:
+                print(f'Unknown command: {cmd}')
+    
+    def _add_piece(self, colour: str, piece: str, sq_num: int) -> None:
+        """
+        Internal method. For all normal purposes use make_move() 
+        or set_fen() instead.
+        Add a piece at the specified coordinates (numerical).
+        """
+        to_sq = self._chessboard[sq_num]
+        if to_sq._colour != 'e':
+            print(f'DEBUG: Square {sq_num} is occupied, replacing')
+
+        if piece == 'k':
+            self._update_king(colour, sq_num)
+
+        to_sq.set_sq(colour, piece)
+    
+    def _move_piece(self, from_num: int, to_num: int = -1, 
+                   promote_to: str = 'q') -> int:
+        """
+        Internal method. For all normal purposes use make_move() instead.
+        Move/remove a single piece (numerical coordinates). Returns 1 (pawn 
+        move), 2 (capture) if move resets the halfmove counter; 0 otherwise.
+        """
+        returnval = 0
+        from_sq = self._chessboard[from_num]
+
+        if from_sq._colour == 'e':
+            print(f'DEBUG: Square {from_num} is empty')
+            return None
+
+        if from_sq._piece == 'k':
+            self._update_king(from_sq._colour, to_num)
+        # Not checking if target square contains a king, might be needed later
+
+        if to_num != -1:
+            if self._chessboard[to_num]._colour not in ('e', from_sq._colour):
+                returnval = 2
+
+        if from_sq._piece == 'p':
+            # Handling promotions
+            pr_row = 7 if from_sq._colour == 'w' else 0
+            if to_num // 8 == pr_row:
+                self._add_piece(from_sq._colour, promote_to, to_num)
+                to_num = -1
+            
+            # Handling en passant
+            elif to_num == self._ep_square:
+                if to_num > from_num:
+                    self._chessboard[to_num - 8].set_sq()
+                else:
+                    self._chessboard[to_num + 8].set_sq()
+            returnval = 1
+
+        if to_num != -1:
+            self._chessboard[to_num].set_sq(from_sq._colour, from_sq._piece)
+        from_sq.set_sq()
+
+        return returnval
+
+    def _update_king(self, colour: str, sq_num: int) -> None:
+        """Update variables containing information about king positions."""
+        
+        if colour == 'b':
+            self._b_king_sq = sq_num
+        else:
+            self._w_king_sq = sq_num
+
+
+print(Board.LOGO_STR)
+
 if __name__ == '__main__':
     board = Board()
-    active = True
-    while active:
-        cmd, *args = input().split()
-        if cmd == 'q':
-            active = False
-        elif cmd == 'b':
-            print(board)
-        elif cmd in ('ad', 'a'):
-            board.add_piece(*args)
-        elif cmd in ('mm', 'm'):
-            args = [int(arg) if arg not in 'bnrq' else arg for arg in args]
-            board.make_move(*args)
-        elif cmd in ('slm', 's'):
-            board.show_legal_moves(board.alg_to_num(*args))
-        elif cmd in ('slmn', 'sn'):
-            board.show_legal_moves(int(*args))
-        elif cmd in ('ff', 'fen', 'f'):
-            fen_str = ''
-            for arg in args:
-                fen_str += arg + ' '
-            board.import_fen(fen_str) if fen_str != '' else board.import_fen()
-        elif cmd in ('i', 'iic'):
-            print(board.is_in_check(*args))
-        elif cmd in ('ant', 'num'):
-            print(board.alg_to_num(*args))
-        else:
-            print('DEBUG: Unknown command')
+    board.interactive_mode()
