@@ -59,7 +59,9 @@ class Board:
 \tb - show board\n\tf [FEN] - set FEN, initial position if no FEN given
 \tf get - get FEN of current position
 \tl [square] - show legal moves from set square, print all if no square given
-\tc - is current player in check\n\tm <square_from> <square_to> - make a move"""
+\tc - is current player in check\n\tm <square_from> <square_to> - make a move
+\tp <depth> - run Perft from current position up to a specified depth
+\te <code> - execute Python code (debug purposes only)"""
 
     # Board coordinates:
     #                   C O L U M N S
@@ -83,7 +85,7 @@ class Board:
         self._chessboard = [Square() for _ in range(64)]
         # Create variables to hold board properties
         self._to_move = '-'
-        self._can_castle = '-'
+        self._can_castle = [None, None, None, None] # K Q k q
         self._ep_square = -1
         self._halfmove_clock = -1
         self._fullmove_counter = -1
@@ -166,10 +168,12 @@ class Board:
             square.set_sq()
 
         # Set the starting properties
-        (rows, self._to_move, self._can_castle, ep_sq, hm_cl, 
+        (rows, self._to_move, cn_cs, ep_sq, hm_cl, 
         fm_ct) = fen.strip().split(' ')
         
         # Convert the values
+        for index, letter in enumerate(('K', 'Q', 'k', 'q')):
+            self._can_castle[index] = True if letter in cn_cs else False
         self._ep_square = self.alg_to_num(ep_sq)
         self._halfmove_clock = int(hm_cl)
         self._fullmove_counter = int(fm_ct)
@@ -198,7 +202,7 @@ class Board:
         Return a FEN string of the current position.
         Issue: returns EP square even if EP not possible (should be '-').
         """
-        s = ""
+        pcs = ''
         for sq_row in range(7, -1, -1):
             num = 0
             for sq_col in range(8):
@@ -207,19 +211,24 @@ class Board:
                     num += 1
                 else:
                     if num != 0:
-                        s += str(num)
-                    s += str(sq)
+                        pcs += str(num)
+                    pcs += str(sq)
                     num = 0
             if num != 0:
-                s += str(num)
+                pcs += str(num)
             if sq_row != 0:
-                s += '/'
+                pcs += '/'
         
-        tomv, cncs, epsq, hmcl, fmct = (self._to_move, self._can_castle, 
-        self._ep_square, self._halfmove_clock, self._fullmove_counter)
-        s = f'{s} {tomv} {cncs} {self.num_to_alg(epsq)} {hmcl} {fmct}'
+        cn_cs = ''
+        for index, letter in enumerate(('K', 'Q', 'k', 'q')):
+            if self._can_castle[index]:
+                cn_cs += letter
+        cn_cs = '-' if cn_cs == '' else cn_cs
 
-        return s
+        to_mv, ep_sq, hm_cl, fm_ct = (self._to_move, self._ep_square, 
+        self._halfmove_clock, self._fullmove_counter)
+        
+        return f'{pcs} {to_mv} {cn_cs} {self.num_to_alg(ep_sq)} {hm_cl} {fm_ct}'
 
     def get_pseudolegal_moves(self, sq_num: int) -> List[int]:
         """
@@ -232,8 +241,8 @@ class Board:
         pseudolegal_moves = []
         all_moves = []
 
-        if from_sq._colour == 'e':
-            print(f'DEBUG: Square {sq_num} is empty')
+        if from_sq._colour != self._to_move:
+            return pseudolegal_moves
         
         # Piece is a pawn
         elif from_sq._piece == 'p':
@@ -274,6 +283,21 @@ class Board:
             if from_sq._piece == 'k':
                 all_moves = [(1, 1), (1, 0), (1, -1), (0, 1),
                              (0, -1), (-1, 1), (-1, 0), (-1, -1)]
+
+                # Castling
+                # Test whether king is in check
+                if not self.is_in_check():
+                    cs_kingside_ind = 0 if from_sq._colour == 'w' else 2
+                    b = self._chessboard
+                    # Castling kingside
+                    if self._can_castle[cs_kingside_ind]:
+                        if b[sq_num+1]._colour == b[sq_num+2]._colour == 'e':
+                            pseudolegal_moves.append(sq_num + 2)
+                    # Castling queenside
+                    if self._can_castle[cs_kingside_ind + 1]:
+                        if (b[sq_num-1]._colour == b[sq_num-2]._colour == 
+                            b[sq_num-3]._colour == 'e'):
+                            pseudolegal_moves.append(sq_num - 2)
             else:
                 all_moves = [(1, 2), (1, -2), (-1, 2), (-1, -2),
                              (2, 1), (2, -1), (-2, 1), (-2, -1)]
@@ -384,6 +408,19 @@ class Board:
             to_sq = self._chessboard[to_num]
             to_piece = to_sq._piece
 
+            # Castling - checking the square that king passes through
+            if from_piece == 'k' and abs(to_num - from_num) == 2:
+                # Determine if castling kingside or queenside
+                cs_dir = 1 if to_num > from_num else -1
+
+                self._move_piece(from_num, from_num + cs_dir)
+                # Illegal if king in check on the square it passes through
+                if self.is_in_check():
+                    self._move_piece(from_num + cs_dir, from_num)
+                    continue
+                # Unmake the move, then proceed as normal
+                self._move_piece(from_num + cs_dir, from_num)
+
             # Make the move and see whether this leaves the king in check
             self._move_piece(from_num, to_num)
             if not self.is_in_check():
@@ -395,7 +432,7 @@ class Board:
                 from_sq.set_sq(from_colour, from_piece)
                 to_sq.set_sq('b' if from_colour == 'w' else 'w', to_piece)
             
-            # Move was either en passant or not a capture
+            # Move was either en passant or not a capture (possibly castling)
             else:
                 # Handling en passant
                 if from_piece == 'p' and to_num == self._ep_square:
@@ -405,6 +442,19 @@ class Board:
                     else:
                         self._chessboard[to_num + 8].set_sq('b' if 
                         from_colour == 'w' else 'w', to_piece)
+                # Handling castling moves
+                if from_piece == 'k' and abs(to_num - from_num) == 2:
+                    if cs_dir > 0:
+                        self._chessboard[from_num + 1].set_sq()
+                        self._chessboard[from_num + 3].set_sq(from_colour, 'r')
+                    else:
+                        self._chessboard[from_num - 1].set_sq()
+                        self._chessboard[from_num - 4].set_sq(from_colour, 'r')
+                    # Cannot call normal
+                    # self._chessboard[to_num].set_sq()
+                    # self._chessboard[from_num].set_sq(from_colour, from_piece)
+                    # self._update_king(from_colour, from_num)
+                    # continue
                 self._move_piece(to_num, from_num)
             
             # Cleaning up after unmaking a promotion
@@ -443,8 +493,32 @@ class Board:
             print("DEBUG: Illegal move")
             return None
         
+        from_sq = self._chessboard[from_num]
+        to_sq = self._chessboard[to_num]
+
+        # Detecting loss of castling rights
+        cs_kingside_ind = 0 if from_sq._colour == 'w' else 2
+        # King has moved from the starting square
+        if from_num in (4, 60) and from_sq._piece == 'k':
+            self._can_castle[cs_kingside_ind] = False
+            self._can_castle[cs_kingside_ind + 1] = False
+        # Rook has moved from the starting square
+        elif from_num in (0, 7, 56, 63) and from_sq._piece == 'r':
+            if from_num in (7, 63):
+                self._can_castle[cs_kingside_ind] = False
+            else:
+                self._can_castle[cs_kingside_ind + 1]
+        # Rook was captured
+        elif to_num in (0, 7, 56, 63) and to_sq._piece == 'r':
+            # Capturing the rook removes castling rights for the opponent
+            cs_kingside_ind = 0 if cs_kingside_ind == 2 else 2
+            if to_num in (7, 63):
+                self._can_castle[cs_kingside_ind] = False
+            else:
+                self._can_castle[cs_kingside_ind + 1] = False
+
         # Detecting possibility of en passant in next ply
-        if self._chessboard[from_num]._piece == 'p':
+        if from_sq._piece == 'p':
             if to_num - from_num == 16:
                 self._ep_square = to_num - 8
             elif to_num - from_num == -16:
@@ -481,7 +555,7 @@ class Board:
                 print(self)
             elif cmd in ('c', 'iic', 'check'):
                 print(self.is_in_check())
-
+           
             elif cmd in ('f', 'fen'):
                 if len(args) == 1 and args[0] == 'get':
                     print(self.get_fen())
@@ -509,7 +583,15 @@ class Board:
                 if len(args) > 2:
                     promote_to = args[2]
                 self.make_move(from_num, to_num, promote_to)
+ 
+            elif cmd in ('e', 'exec'):
+                to_exec = ''
+                for arg in args:
+                    to_exec += arg + ' '
+                exec(to_exec.rstrip())
 
+            elif cmd in ('p', 'perft'):
+                raise NotImplementedError()
             else:
                 print(f'Unknown command: {cmd}')
     
@@ -544,6 +626,16 @@ class Board:
 
         if from_sq._piece == 'k':
             self._update_king(from_sq._colour, to_num)
+            # Handling castling moves
+            if from_num in (4, 60) and abs(to_num - from_num) == 2:
+                # Castling kingside
+                if to_num > from_num:
+                    self._chessboard[to_num - 1].set_sq(from_sq._colour, 'r')
+                    self._chessboard[to_num + 1].set_sq()
+                # Castling queenside
+                else:
+                    self._chessboard[to_num + 1].set_sq(from_sq._colour, 'r')
+                    self._chessboard[to_num - 2].set_sq()
         # Not checking if target square contains a king, might be needed later
 
         if to_num != -1:
@@ -565,6 +657,7 @@ class Board:
                     self._chessboard[to_num + 8].set_sq()
             returnval = 1
 
+        # Actually move the piece
         if to_num != -1:
             self._chessboard[to_num].set_sq(from_sq._colour, from_sq._piece)
         from_sq.set_sq()
