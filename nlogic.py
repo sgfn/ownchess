@@ -1,5 +1,5 @@
-from typing import Dict, List, Set
-
+from typing import Dict, List, Tuple, Set
+from time import time
 
 class Square:
     """Class representing a single square in the board."""
@@ -60,6 +60,7 @@ class Board:
 \tf get - get FEN of current position
 \tl [square] - show legal moves from set square, print all if no square given
 \tc - is current player in check\n\tm <square_from> <square_to> - make a move
+\tu - undo the last move
 \tp <depth> - run Perft from current position up to a specified depth
 \te <code> - execute Python code (debug purposes only)"""
 
@@ -93,6 +94,12 @@ class Board:
         # # Create piece lists
         # self._white_pieces = []
         # self._black_pieces = []
+
+        # Create a move list
+        self._move_list = []
+
+        # Create a dict for storing all legal moves from current position
+        self._all_legal_moves = {}
         
         # Create helper properties containing the king's positions
         self._w_king_sq = -1
@@ -196,6 +203,12 @@ class Board:
                         self._update_king(colour, sq_num)
                     self._chessboard[sq_num].set_sq(colour, piece)
                     col += 1
+        
+        # Update the dict of legal moves
+        self._all_legal_moves = self.get_all_legal_moves()
+
+        # Detect and handle game ending states
+        self.detect_game_end()
 
     def get_fen(self) -> str:
         """
@@ -234,7 +247,6 @@ class Board:
         """
         Return a list of squares available as targets of pseudolegal moves 
         (moves which might leave the player in check) from selected square.
-        Castling TBA.
         """
         from_sq = self._chessboard[sq_num]
         from_row, from_col = sq_num // 8, sq_num % 8
@@ -392,16 +404,16 @@ class Board:
     def get_legal_moves(self, from_num: int) -> Set[int]:
         """
         Return a set of squares available as targets of legal moves 
-        from selected square. Castling TBA.
+        from selected square.
         """
         pseudolegal_moves = self.get_pseudolegal_moves(from_num)
         legal_moves = set()
 
         from_sq = self._chessboard[from_num]
-        from_colour = from_sq._colour
+        from_clr = from_sq._colour
         from_piece = from_sq._piece
 
-        if from_colour != self._to_move:
+        if from_clr != self._to_move:
             return legal_moves
 
         for to_num in pseudolegal_moves:
@@ -414,59 +426,25 @@ class Board:
                 cs_dir = 1 if to_num > from_num else -1
 
                 self._move_piece(from_num, from_num + cs_dir)
-                # Illegal if king in check on the square it passes through
+                # Illegal if king is in check on the square it passes through
                 if self.is_in_check():
                     self._move_piece(from_num + cs_dir, from_num)
                     continue
                 # Unmake the move, then proceed as normal
                 self._move_piece(from_num + cs_dir, from_num)
 
-            # Make the move and see whether this leaves the king in check
+            # Make the move, see whether the king is in check, then unmake it
             self._move_piece(from_num, to_num)
             if not self.is_in_check():
                 legal_moves.add(to_num)
-
-            # Unmake the move - REFACTOR INTO A SEPARATE FUNCTION
-            # Move was a standard capture
-            if to_piece != 'e':
-                from_sq.set_sq(from_colour, from_piece)
-                to_sq.set_sq('b' if from_colour == 'w' else 'w', to_piece)
-            
-            # Move was either en passant or not a capture (possibly castling)
-            else:
-                # Handling en passant
-                if from_piece == 'p' and to_num == self._ep_square:
-                    if to_num > from_num:
-                        self._chessboard[to_num - 8].set_sq('b' if 
-                        from_colour == 'w' else 'w', to_piece)
-                    else:
-                        self._chessboard[to_num + 8].set_sq('b' if 
-                        from_colour == 'w' else 'w', to_piece)
-                # Handling castling moves
-                if from_piece == 'k' and abs(to_num - from_num) == 2:
-                    if cs_dir > 0:
-                        self._chessboard[from_num + 1].set_sq()
-                        self._chessboard[from_num + 3].set_sq(from_colour, 'r')
-                    else:
-                        self._chessboard[from_num - 1].set_sq()
-                        self._chessboard[from_num - 4].set_sq(from_colour, 'r')
-                    # Cannot call normal
-                    # self._chessboard[to_num].set_sq()
-                    # self._chessboard[from_num].set_sq(from_colour, from_piece)
-                    # self._update_king(from_colour, from_num)
-                    # continue
-                self._move_piece(to_num, from_num)
-            
-            # Cleaning up after unmaking a promotion
-            if from_piece != from_sq._piece:
-                from_sq._piece = from_piece
+            self._unmove_piece(from_num, to_num, from_clr, from_piece, to_piece)
         
         return legal_moves
 
     def show_legal_moves(self, sq_num: int) -> None:
         """Print the output of get_legal_moves() to stdout."""
 
-        legal_moves = self.get_legal_moves(sq_num)
+        legal_moves = self._all_legal_moves[sq_num]
         print(self.__str__(highlit_squares=legal_moves))
     
     def get_all_legal_moves(self) -> Dict[int, Set[int]]:
@@ -485,31 +463,40 @@ class Board:
                   promote_to: str = 'q') -> None:
         """
         Make a permanent move. Increments the halfmove clock as well as
-        the fullmove counter, changes the en passant target square.
-        Removal of castling rights TBA.
+        the fullmove counter, changes the en passant target square, 
+        removes castling rights.
         """
-        legal_moves = self.get_legal_moves(from_num)
-        if to_num not in legal_moves:
-            print("DEBUG: Illegal move")
+        moves = self._all_legal_moves
+        if from_num not in moves or to_num not in moves[from_num]:
+            print(f'DEBUG: Illegal move: {from_num}->{to_num}')
             return None
         
+        # Store board properties before making the move
+        cn_cs = self._can_castle.copy()
+        ep_sq = self._ep_square
+        hm_cl = self._halfmove_clock
+        fm_ct = self._fullmove_counter
+
         from_sq = self._chessboard[from_num]
         to_sq = self._chessboard[to_num]
+        from_colour = from_sq._colour
+        from_piece = from_sq._piece
+        to_piece = to_sq._piece
 
         # Detecting loss of castling rights
-        cs_kingside_ind = 0 if from_sq._colour == 'w' else 2
+        cs_kingside_ind = 0 if from_colour == 'w' else 2
         # King has moved from the starting square
-        if from_num in (4, 60) and from_sq._piece == 'k':
+        if from_num in (4, 60) and from_piece == 'k':
             self._can_castle[cs_kingside_ind] = False
             self._can_castle[cs_kingside_ind + 1] = False
         # Rook has moved from the starting square
-        elif from_num in (0, 7, 56, 63) and from_sq._piece == 'r':
+        elif from_num in (0, 7, 56, 63) and from_piece == 'r':
             if from_num in (7, 63):
                 self._can_castle[cs_kingside_ind] = False
             else:
                 self._can_castle[cs_kingside_ind + 1]
         # Rook was captured
-        elif to_num in (0, 7, 56, 63) and to_sq._piece == 'r':
+        elif to_num in (0, 7, 56, 63) and to_piece == 'r':
             # Capturing the rook removes castling rights for the opponent
             cs_kingside_ind = 0 if cs_kingside_ind == 2 else 2
             if to_num in (7, 63):
@@ -517,8 +504,25 @@ class Board:
             else:
                 self._can_castle[cs_kingside_ind + 1] = False
 
+        # Move the piece and check whether to reset the halfmove clock
+        reset_hm_cl, move_type = self._move_piece(from_num, to_num, promote_to)
+        if reset_hm_cl > 0:
+            self._halfmove_clock = 0
+        else:
+            self._halfmove_clock += 1
+
+        if self._to_move == 'b':
+            self._fullmove_counter += 1
+
+        self._to_move = 'b' if self._to_move == 'w' else 'w'
+
+        # Update the list of previous moves
+        move_data = [from_num, to_num, from_piece, to_piece, move_type,
+        cn_cs, ep_sq, hm_cl, fm_ct]
+        self._move_list.append(move_data)
+
         # Detecting possibility of en passant in next ply
-        if from_sq._piece == 'p':
+        if from_piece == 'p':
             if to_num - from_num == 16:
                 self._ep_square = to_num - 8
             elif to_num - from_num == -16:
@@ -528,17 +532,85 @@ class Board:
         else:
             self._ep_square = -1
 
-        # Move the piece and check whether to reset the halfmove clock
-        mp_returnval = self._move_piece(from_num, to_num, promote_to)
-        if mp_returnval > 0:
-            self._halfmove_clock = 0
-        else:
-            self._halfmove_clock += 1
+        # Update the dict of legal moves
+        self._all_legal_moves = self.get_all_legal_moves()
 
-        if self._to_move == 'b':
-            self._fullmove_counter += 1
+        # Detect and handle game ending states
+        self.detect_game_end()
 
-        self._to_move = 'b' if self._to_move == 'w' else 'w'
+    def unmake_move(self) -> None:
+        """Unmake the last move made using the make_move() function."""
+
+        if len(self._move_list) == 0:
+            print('DEBUG: Nothing to unmake')
+            return None
+
+        # Unpack and update the list of previous moves
+        (from_num, to_num, from_piece, to_piece, move_type, cn_cs, ep_sq, 
+        hm_cl, fm_ct) = self._move_list.pop()
+        
+        # Reinstate previous board properties
+        self._can_castle = cn_cs.copy()
+        self._ep_square = ep_sq
+        self._halfmove_clock = hm_cl
+        self._fullmove_counter = fm_ct
+
+        has_moved = 'w' if self._to_move == 'b' else 'b'
+        # Unmake the move
+        self._unmove_piece(from_num, to_num, has_moved, from_piece, to_piece)
+
+        # Change the player to move
+        self._to_move = has_moved
+
+        # Update the dict of legal moves
+        self._all_legal_moves = self.get_all_legal_moves()
+
+    def detect_game_end(self) -> int:
+        """
+        Detect and handle game ending states - stalemates and checkmates.
+        Returns 1 if checkmate, 2 if stalemate, 0 otherwise.
+        """
+        if len(self._all_legal_moves) == 0:
+            if self.is_in_check():
+                colour = 'White' if self._to_move == 'b' else 'Black'
+                print(f'Checkmate. {colour} wins')
+                return 1
+            else:
+                print('Stalemate')
+                return 2
+        return 0
+
+    def perft(self, depth: int) -> int:
+        """
+        Return number of leaf nodes (possible positions after all legal moves)
+        at set depth from current position.
+        """
+        if depth < 0:
+            raise ValueError('Negative depth')
+        if depth == 0:
+            return 1
+        if depth == 1:
+            counter = 0
+            for move_from, move_to_set in self._all_legal_moves.items():
+                if (self._chessboard[move_from]._piece == 'p' and 
+                   (move_from // 8, self._chessboard[move_from]._colour) in (
+                   (6, 'w'), (1, 'b'))):
+                    counter += 3
+                counter += len(move_to_set)
+
+        leaf_nodes = 0
+        for move_from, move_to_set in self._all_legal_moves.items():
+            for move_to in move_to_set:
+                # Handling underpromotions
+                if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
+                    for promote_to in ('r', 'b', 'n'):
+                        self.make_move(move_from, move_to, promote_to)
+                        leaf_nodes += self.perft(depth - 1)
+                        self.unmake_move()
+                self.make_move(move_from, move_to)
+                leaf_nodes += self.perft(depth - 1)
+                self.unmake_move()
+        return leaf_nodes
 
     def interactive_mode(self) -> None:
         """Work with the board in an interactive command prompt mode."""
@@ -569,7 +641,7 @@ class Board:
                 if len(args) == 1:
                     self.show_legal_moves(self.alg_to_num(*args))
                 else:
-                    dct = self.get_all_legal_moves()
+                    dct = self._all_legal_moves
                     for key, val in dct.items():
                         print(self.num_to_alg(key), end=': ')
                         for i, v in enumerate(val):
@@ -583,6 +655,9 @@ class Board:
                 if len(args) > 2:
                     promote_to = args[2]
                 self.make_move(from_num, to_num, promote_to)
+            
+            elif cmd in ('u', 'um', 'undo', 'umove', 'unmove'):
+                self.unmake_move()
  
             elif cmd in ('e', 'exec'):
                 to_exec = ''
@@ -591,7 +666,9 @@ class Board:
                 exec(to_exec.rstrip())
 
             elif cmd in ('p', 'perft'):
-                raise NotImplementedError()
+                start_time = time()
+                print(self.perft(int(*args)))
+                print(f'Time: {time() - start_time} s')
             else:
                 print(f'Unknown command: {cmd}')
     
@@ -602,8 +679,8 @@ class Board:
         Add a piece at the specified coordinates (numerical).
         """
         to_sq = self._chessboard[sq_num]
-        if to_sq._colour != 'e':
-            print(f'DEBUG: Square {sq_num} is occupied, replacing')
+        # if to_sq._colour != 'e':
+        #     print(f'DEBUG: Square {sq_num} is occupied, replacing')
 
         if piece == 'k':
             self._update_king(colour, sq_num)
@@ -611,13 +688,18 @@ class Board:
         to_sq.set_sq(colour, piece)
     
     def _move_piece(self, from_num: int, to_num: int = -1, 
-                   promote_to: str = 'q') -> int:
+                   promote_to: str = 'q') -> Tuple[int, str]:
         """
         Internal method. For all normal purposes use make_move() instead.
-        Move/remove a single piece (numerical coordinates). Returns 1 (pawn 
-        move), 2 (capture) if move resets the halfmove counter; 0 otherwise.
+        Move/remove a single piece (numerical coordinates). Returns a tuple of
+        two values, the first one is positive if move resets the halfmove 
+        counter: 1 - pawn move, 2 - capture, 0 - neither; the second one returns
+        a one-character string depicting type of move: 'e' - en passant,
+        'c' - castling, 'q'/'r'/'b'/'n' - promotion to the respective piece,
+        's' - other move (can be a capture).
         """
-        returnval = 0
+        reset_hm_cl = 0
+        move_type = 's'
         from_sq = self._chessboard[from_num]
 
         if from_sq._colour == 'e':
@@ -628,6 +710,7 @@ class Board:
             self._update_king(from_sq._colour, to_num)
             # Handling castling moves
             if from_num in (4, 60) and abs(to_num - from_num) == 2:
+                move_type = 'c'
                 # Castling kingside
                 if to_num > from_num:
                     self._chessboard[to_num - 1].set_sq(from_sq._colour, 'r')
@@ -640,29 +723,70 @@ class Board:
 
         if to_num != -1:
             if self._chessboard[to_num]._colour not in ('e', from_sq._colour):
-                returnval = 2
+                reset_hm_cl = 2
 
         if from_sq._piece == 'p':
             # Handling promotions
             pr_row = 7 if from_sq._colour == 'w' else 0
             if to_num // 8 == pr_row:
+                move_type = promote_to
                 self._add_piece(from_sq._colour, promote_to, to_num)
                 to_num = -1
             
             # Handling en passant
             elif to_num == self._ep_square:
+                move_type = 'e'
                 if to_num > from_num:
                     self._chessboard[to_num - 8].set_sq()
                 else:
                     self._chessboard[to_num + 8].set_sq()
-            returnval = 1
+            reset_hm_cl = 1
 
         # Actually move the piece
         if to_num != -1:
             self._chessboard[to_num].set_sq(from_sq._colour, from_sq._piece)
         from_sq.set_sq()
 
-        return returnval
+        return (reset_hm_cl, move_type)
+
+    def _unmove_piece(self, from_num: int, to_num: int, from_colour: str, 
+                      from_piece: str, to_piece: str) -> None:
+        """
+        Internal method. For all normal purposes use unmake_move() instead.
+        Undo a move made using the _move_piece() method.
+        """
+        from_sq = self._chessboard[from_num]
+        to_sq = self._chessboard[to_num]
+
+        # Move was a standard capture
+        if to_piece != 'e':
+            from_sq.set_sq(from_colour, from_piece)
+            to_sq.set_sq('b' if from_colour == 'w' else 'w', to_piece)
+        
+        # Move was either en passant or not a capture (possibly castling)
+        else:
+            # Handling en passant
+            if from_piece == 'p' and to_num == self._ep_square:
+                if to_num > from_num:
+                    self._chessboard[to_num - 8].set_sq('b' if 
+                    from_colour == 'w' else 'w', 'p')
+                else:
+                    self._chessboard[to_num + 8].set_sq('b' if 
+                    from_colour == 'w' else 'w', 'p')
+            # Handling castling moves
+            if from_piece == 'k' and abs(to_num - from_num) == 2:
+                cs_dir = 1 if to_num > from_num else -1
+                if cs_dir > 0:
+                    self._chessboard[from_num + 1].set_sq()
+                    self._chessboard[from_num + 3].set_sq(from_colour, 'r')
+                else:
+                    self._chessboard[from_num - 1].set_sq()
+                    self._chessboard[from_num - 4].set_sq(from_colour, 'r')
+            self._move_piece(to_num, from_num)
+        
+        # Cleaning up after unmaking a promotion
+        if from_piece != from_sq._piece:
+            from_sq._piece = from_piece
 
     def _update_king(self, colour: str, sq_num: int) -> None:
         """Update variables containing information about king positions."""
