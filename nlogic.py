@@ -1,6 +1,7 @@
 from typing import Dict, List, Tuple, Set
 from time import time
 
+
 class Square:
     """Class representing a single square in the board."""
 
@@ -444,7 +445,7 @@ class Board:
     def show_legal_moves(self, sq_num: int) -> None:
         """Print the output of get_legal_moves() to stdout."""
 
-        legal_moves = self._all_legal_moves[sq_num]
+        legal_moves = self._all_legal_moves.get(sq_num, set())
         print(self.__str__(highlit_squares=legal_moves))
     
     def get_all_legal_moves(self) -> Dict[int, Set[int]]:
@@ -468,7 +469,8 @@ class Board:
         """
         moves = self._all_legal_moves
         if from_num not in moves or to_num not in moves[from_num]:
-            print(f'DEBUG: Illegal move: {from_num}->{to_num}')
+            print(f'DEBUG: Illegal move: {str(self._chessboard[from_num])} on {self.num_to_alg(from_num)} -> {str(self._chessboard[to_num])} on {self.num_to_alg(to_num)}')
+            print(f'\tPrevious move: {self._move_list[-1] if len(self._move_list) > 0 else "NONE"}')
             return None
         
         # Store board properties before making the move
@@ -516,9 +518,15 @@ class Board:
 
         self._to_move = 'b' if self._to_move == 'w' else 'w'
 
+        # Cache the possible moves to make from this position
+        moves_cache = []
+        for move_from, move_to_set in self._all_legal_moves.items():
+            for move_to in move_to_set:
+                moves_cache.append((move_from, move_to))
+
         # Update the list of previous moves
         move_data = [from_num, to_num, from_piece, to_piece, move_type,
-        cn_cs, ep_sq, hm_cl, fm_ct]
+        cn_cs, ep_sq, hm_cl, fm_ct, moves_cache.copy()]
         self._move_list.append(move_data)
 
         # Detecting possibility of en passant in next ply
@@ -547,7 +555,7 @@ class Board:
 
         # Unpack and update the list of previous moves
         (from_num, to_num, from_piece, to_piece, move_type, cn_cs, ep_sq, 
-        hm_cl, fm_ct) = self._move_list.pop()
+        hm_cl, fm_ct, moves_cache) = self._move_list.pop()
         
         # Reinstate previous board properties
         self._can_castle = cn_cs.copy()
@@ -562,8 +570,13 @@ class Board:
         # Change the player to move
         self._to_move = has_moved
 
-        # Update the dict of legal moves
-        self._all_legal_moves = self.get_all_legal_moves()
+        # Recreate the dict of legal moves from the cached list
+        self._all_legal_moves = {}
+        for move_from, move_to in moves_cache:
+            if move_from not in self._all_legal_moves:
+                self._all_legal_moves[move_from] = {move_to}
+            else:
+                self._all_legal_moves[move_from].add(move_to)
 
     def detect_game_end(self) -> int:
         """
@@ -595,22 +608,46 @@ class Board:
                 if (self._chessboard[move_from]._piece == 'p' and 
                    (move_from // 8, self._chessboard[move_from]._colour) in (
                    (6, 'w'), (1, 'b'))):
-                    counter += 3
+                    counter += 3 * len(move_to_set) # can promote on multiple fields (e.g. when capturing)
                 counter += len(move_to_set)
+            return counter
 
         leaf_nodes = 0
         for move_from, move_to_set in self._all_legal_moves.items():
             for move_to in move_to_set:
-                # Handling underpromotions
+                # Handling promotions
                 if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
-                    for promote_to in ('r', 'b', 'n'):
+                    for promote_to in ('q', 'r', 'b', 'n'):
                         self.make_move(move_from, move_to, promote_to)
                         leaf_nodes += self.perft(depth - 1)
                         self.unmake_move()
-                self.make_move(move_from, move_to)
-                leaf_nodes += self.perft(depth - 1)
-                self.unmake_move()
+                else:
+                    self.make_move(move_from, move_to)
+                    leaf_nodes += self.perft(depth - 1)
+                    self.unmake_move()
         return leaf_nodes
+
+    def divide(self, depth: int) -> Dict[str, int]:
+        """Perft variation listing the node counts for each possible move."""
+
+        if depth < 2:
+            return self.perft(depth)
+
+        leaf_nodes_dict = {}
+        for move_from, move_to_set in self._all_legal_moves.items():
+            for move_to in move_to_set:
+                # Handling promotions
+                if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
+                    for promote_to in ('q', 'r', 'b', 'n'):
+                        self.make_move(move_from, move_to, promote_to)
+                        leaf_nodes_dict[f'{self.num_to_alg(move_from)}{self.num_to_alg(move_to)}{promote_to.upper()}'] = self.perft(depth - 1)
+                        self.unmake_move()
+                else:
+                    self.make_move(move_from, move_to)
+                    leaf_nodes_dict[f'{self.num_to_alg(move_from)}{self.num_to_alg(move_to)}'] = self.perft(depth - 1)
+                    self.unmake_move()
+
+        return leaf_nodes_dict
 
     def interactive_mode(self) -> None:
         """Work with the board in an interactive command prompt mode."""
@@ -667,8 +704,17 @@ class Board:
 
             elif cmd in ('p', 'perft'):
                 start_time = time()
-                print(self.perft(int(*args)))
-                print(f'Time: {time() - start_time} s')
+                nodes = self.perft(int(*args))
+                total_time = round(time() - start_time, 2)
+                print(f'Nodes: {nodes} \tTime: {total_time} s \tSpeed: {int(nodes//(total_time*1000)) if total_time != 0 else "Inf"} knodes/s')
+            
+            elif cmd in ('d', 'divide'):
+                start_time = time()
+                ans_dict = self.divide(int(*args))
+                for move, count in ans_dict.items():
+                    print(f'{move}: {count}')
+                print(f'\nNodes total: {sum(ans_dict.values())}')
+                print(f'Time: {round(time() - start_time, 2)} s')
             else:
                 print(f'Unknown command: {cmd}')
     
@@ -753,7 +799,7 @@ class Board:
                       from_piece: str, to_piece: str) -> None:
         """
         Internal method. For all normal purposes use unmake_move() instead.
-        Undo a move made using the _move_piece() method.
+        Undo a move made using the _move_piece(from_num, to_num) method.
         """
         from_sq = self._chessboard[from_num]
         to_sq = self._chessboard[to_num]
@@ -787,6 +833,10 @@ class Board:
         # Cleaning up after unmaking a promotion
         if from_piece != from_sq._piece:
             from_sq._piece = from_piece
+
+        # Update king position
+        if from_piece == 'k':
+            self._update_king(from_colour, from_num)
 
     def _update_king(self, colour: str, sq_num: int) -> None:
         """Update variables containing information about king positions."""
