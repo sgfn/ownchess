@@ -81,9 +81,11 @@ class Board:
     #           A   B   C   D   E   F   G   H
     #                    f i l e s
 
-    def __init__(self) -> None:
-        """Create a Board object with an 8x8 chessboard (initial position)."""
-
+    def __init__(self, fen: str = '') -> None:
+        """
+        Create a Board object with an 8x8 chessboard and set it up according 
+        to given FEN (initial position if FEN not specified).
+        """
         self._chessboard = [Square() for _ in range(64)]
         # Create variables to hold board properties
         self._to_move = '-'
@@ -105,8 +107,8 @@ class Board:
         # Create helper properties containing the king's positions
         self._w_king_sq = -1
         self._b_king_sq = -1
-        # Set initial pos at start seeing as one would almost always do this
-        self.set_fen()
+        # Set the position from given FEN
+        self.set_fen(fen)
 
     def __str__(self, highlit_squares=set()) -> str:
         """
@@ -176,8 +178,12 @@ class Board:
             square.set_sq()
 
         # Set the starting properties
-        (rows, self._to_move, cn_cs, ep_sq, hm_cl, 
-        fm_ct) = fen.strip().split(' ')
+        fen_data = fen.strip().split(' ')
+        if len(fen_data) < 6:
+            rows, self._to_move, cn_cs, ep_sq = fen_data
+            hm_cl, fm_ct = 0, 1
+        else:
+            rows, self._to_move, cn_cs, ep_sq, hm_cl, fm_ct = fen_data
         
         # Convert the values
         for index, letter in enumerate(('K', 'Q', 'k', 'q')):
@@ -578,18 +584,20 @@ class Board:
             else:
                 self._all_legal_moves[move_from].add(move_to)
 
-    def detect_game_end(self) -> int:
+    def detect_game_end(self, verbose: bool = False) -> int:
         """
         Detect and handle game ending states - stalemates and checkmates.
         Returns 1 if checkmate, 2 if stalemate, 0 otherwise.
         """
         if len(self._all_legal_moves) == 0:
             if self.is_in_check():
-                colour = 'White' if self._to_move == 'b' else 'Black'
-                print(f'Checkmate. {colour} wins')
+                if verbose:
+                    colour = 'White' if self._to_move == 'b' else 'Black'
+                    print(f'Checkmate. {colour} wins')
                 return 1
             else:
-                print('Stalemate')
+                if verbose:
+                    print('Stalemate')
                 return 2
         return 0
 

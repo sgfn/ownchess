@@ -3,9 +3,9 @@ from time import sleep
 
 import pygame as pgm
 
-from sprites import BoardSprite, PieceSprite, TextSprite
-from logic import Board
-from settings import Settings
+from modules.sprites import BoardSprite, PieceSprite, TextSprite
+from modules.board_old import Board
+from modules.settings import Settings
 
 
 class OwnchessGUI:
