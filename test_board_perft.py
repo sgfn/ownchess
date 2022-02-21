@@ -45,6 +45,7 @@ def test_perft(data: Tuple[str, int, int, int, int, int, int],
 def test_all(test_data: List[Tuple[str, int, int, int, int, int, int]], 
              max_depth: int, file_handle: TextIOWrapper) -> None:
     
+    failed_fens = []
     start_time = time()
     overall_passed = 0
     for test in test_data:
@@ -52,8 +53,11 @@ def test_all(test_data: List[Tuple[str, int, int, int, int, int, int]],
         overall_passed += tests_passed
         for passed, time_total, nodes in results:
             file_handle.write(f'{"OK" if passed else "FAILED"},{time_total},{nodes},')
+            if not passed:
+                failed_fens.append(test[0])
         file_handle.write('\n')
     print(f'\nPassed: {overall_passed}/{max_depth*len(test_data)}\tTime: {round(time() - start_time, 2)} s')
+    print(failed_fens)
 
 
 if __name__ == '__main__':
