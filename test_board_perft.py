@@ -57,13 +57,13 @@ def test_all(test_data: List[Tuple[str, int, int, int, int, int, int]],
                 failed_fens.append(test[0])
         file_handle.write('\n')
     print(f'\nPassed: {overall_passed}/{max_depth*len(test_data)}\tTime: {round(time() - start_time, 2)} s')
-    print(failed_fens)
+    # print(failed_fens)
 
 
 if __name__ == '__main__':
-    FILE='perft'
-    MAXDEPTH=3
-    VERSION=3
+    FILE='perft_d4_failed'
+    MAXDEPTH=4
+    VERSION='devel'
     test_data = load_data(f'tests/data/{FILE}.csv')
     with open(f'tests/results/{FILE}-d{MAXDEPTH}-{VERSION}.csv', 'w') as f:
         test_all(test_data, MAXDEPTH, f)

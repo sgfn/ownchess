@@ -607,17 +607,17 @@ class Board:
             self._can_castle[cs_kingside_ind + 1] = False
         # Rook has moved from the starting square
         elif from_num in (0, 7, 56, 63) and from_piece == 'r':
-            if from_num in (7, 63):
+            if (from_num, from_colour) in ((7, 'w'), (63, 'b')):
                 self._can_castle[cs_kingside_ind] = False
-            else:
-                self._can_castle[cs_kingside_ind + 1]
+            elif (from_num, from_colour) in ((0, 'w'), (56, 'b')):
+                self._can_castle[cs_kingside_ind + 1] = False
         # Rook was captured
         elif to_num in (0, 7, 56, 63) and to_piece == 'r':
             # Capturing the rook removes castling rights for the opponent
             cs_kingside_ind = 0 if cs_kingside_ind == 2 else 2
-            if to_num in (7, 63):
+            if (to_num, from_colour) in ((7, 'b'), (63, 'w')):
                 self._can_castle[cs_kingside_ind] = False
-            else:
+            elif (to_num, from_colour) in ((0, 'b'), (56, 'w')):
                 self._can_castle[cs_kingside_ind + 1] = False
 
         # Move the piece and check whether to reset the halfmove clock
@@ -778,18 +778,17 @@ class Board:
             return self.perft(depth)
 
         leaf_nodes_dict = {}
-        for move_from, move_to_set in self._all_legal_moves.items():
-            for move_to in move_to_set:
-                # Handling promotions
-                if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
-                    for promote_to in ('q', 'r', 'b', 'n'):
-                        self.make_move(move_from, move_to, promote_to, True)
-                        leaf_nodes_dict[f'{self.num_to_alg(move_from)}{self.num_to_alg(move_to)}{promote_to.upper()}'] = self.perft(depth - 1)
-                        self.unmake_move()
-                else:
-                    self.make_move(move_from, move_to, 'q', True)
-                    leaf_nodes_dict[f'{self.num_to_alg(move_from)}{self.num_to_alg(move_to)}'] = self.perft(depth - 1)
+        for move_from, move_to in self._all_legal_moves_tuple_list:
+            # Handling promotions
+            if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
+                for promote_to in ('q', 'r', 'b', 'n'):
+                    self.make_move(move_from, move_to, promote_to, True)
+                    leaf_nodes_dict[f'{self.num_to_alg(move_from)}{self.num_to_alg(move_to)}{promote_to.upper()}'] = self.perft(depth - 1)
                     self.unmake_move()
+            else:
+                self.make_move(move_from, move_to, 'q', True)
+                leaf_nodes_dict[f'{self.num_to_alg(move_from)}{self.num_to_alg(move_to)}'] = self.perft(depth - 1)
+                self.unmake_move()
 
         return leaf_nodes_dict
 

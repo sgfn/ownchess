@@ -1,5 +1,4 @@
 import csv
-from io import TextIOWrapper
 import multiprocessing
 from time import time
 from typing import List, Tuple
@@ -49,13 +48,13 @@ def test_perft(data: Tuple[str, int, int, int, int, int, int],
 def test_all(test_data: List[Tuple[str, int, int, int, int, int, int]], 
              max_depth: int, index: int, verbose: bool = False) -> str:
     
-    file = open(f'tests/results/perft_10-d{max_depth}-99-{index}.csv', 'w')
+    file = open(f'tests/results/perft_10-d{max_depth}-98-{index}.csv', 'w')
     failed_fens = []
     start_time = time()
     overall_passed = 0
     csv_str = ''
     for test in test_data:
-        results, tests_passed = test_perft(test, max_depth)
+        results, tests_passed = test_perft(test, max_depth, verbose)
         overall_passed += tests_passed
         csv_str += f'{test[0]},'
         for passed, time_total, nodes in results:
@@ -75,9 +74,9 @@ def test_all(test_data: List[Tuple[str, int, int, int, int, int, int]],
 
 if __name__ == '__main__':
     FILE='perft_10'
-    MAXDEPTH=5
-    VERSION=99
-    f_time = open(f'tests/results/lasttime_10.txt', 'w')
+    MAXDEPTH=4
+    VERSION=98
+    f_time = open(f'tests/results/lasttime_10_otherpc.txt', 'w')
     start_time = time()
     # f1 = open(f'tests/results/{FILE}-d{MAXDEPTH}-{VERSION}-1.csv', 'w')
     # f2 = open(f'tests/results/{FILE}-d{MAXDEPTH}-{VERSION}-2.csv', 'w')
