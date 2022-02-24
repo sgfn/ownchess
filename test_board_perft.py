@@ -1,5 +1,6 @@
 import csv
 from io import TextIOWrapper
+from math import log10
 from time import time
 from typing import List, Tuple
 
@@ -48,7 +49,9 @@ def test_all(test_data: List[Tuple[str, int, int, int, int, int, int]],
     failed_fens = []
     start_time = time()
     overall_passed = 0
-    for test in test_data:
+    for index, test in enumerate(test_data):
+        print(f'[{" "*(3-int(log10(index+1)))}{index + 1}]', end=' ')
+        
         results, tests_passed = test_perft(test, max_depth)
         overall_passed += tests_passed
         for passed, time_total, nodes in results:
