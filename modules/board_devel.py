@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple, Set
 from time import time
-
+import cython
 
 class Square:
     """Class representing a single square in the board."""
@@ -90,8 +90,8 @@ class Board:
         self._fullmove_counter = -1
 
         # Create piece squares lists
-        self._white_pieces = []
-        self._black_pieces = []
+        self._white_pieces = set()
+        self._black_pieces = set()
 
         # # Create stable piece squares lists
         # self._white_piece_squares_nums_stable = [-1 for _ in range(16)]
@@ -183,8 +183,8 @@ class Board:
             # square._list_ind = -1
 
         # Clear the piece lists UPDATE PIECE LISTS
-        self._white_pieces = []
-        self._black_pieces = []
+        self._white_pieces = set()
+        self._black_pieces = set()
 
         # Set the starting properties
         fen_data = fen.strip().split(' ')
@@ -223,7 +223,7 @@ class Board:
                     self._chessboard[sq_num]._piece = piece
                     # self._chessboard[sq_num]._list_ind = -1
                     # UPDATE PIECE LIST
-                    self._update_piece_lists(colour, -1, sq_num)
+                    self._update_piece_sets(colour, -1, sq_num)
                     # # UPDATE STABLE PIECE LIST AND SQUARE PROPERTY
                     # if colour == 'b':
                     #     self._chessboard[sq_num]._list_ind = piece_list_black_i
@@ -382,10 +382,22 @@ class Board:
 
         return pseudolegal_moves
 
-    def is_in_check(self) -> bool:
+    def get_all_pseudolegal_moves(self) -> List[Tuple[int, int]]:
+
+        all_pseudolegal_moves = []
+        for sq_num in self._white_pieces if self._to_move == 'w' else self._black_pieces:
+            for sq_to in self.get_pseudolegal_moves(sq_num):
+                all_pseudolegal_moves.append((sq_num, sq_to))
+        return all_pseudolegal_moves
+
+    def is_in_check(self, other_player: bool = False) -> bool:
         """Test whether the player to move is in check."""
 
-        k_colour = self._to_move
+        if not other_player:
+            k_colour = self._to_move
+        else:
+            k_colour = 'w' if self._to_move == 'b' else 'b'
+
         if k_colour == 'w':
             k_row, k_col = self._w_king_sq // 8, self._w_king_sq % 8
         else:
@@ -488,18 +500,15 @@ class Board:
     def show_piece_positions(self, colour: str) -> None: # UPDATE PIECE LISTS
         """Show piece positions on the output"""
 
-        piece_positions = set(self._black_pieces if colour == 'b' else self._white_pieces)
+        piece_positions = self._black_pieces if colour == 'b' else self._white_pieces
         print(self.__str__(highlit_squares=piece_positions))
     
     def get_all_legal_moves(self) -> List[Tuple[int, int]]:
         """Return a list of tuples representing all legal moves in position."""
 
         all_legal_moves = []
-        # Can be optimised by using piece lists - DOING SO NOW
         for sq_num in self._white_pieces if self._to_move == 'w' else self._black_pieces:
-            square = self._chessboard[sq_num]
-            if square._colour == self._to_move:
-                all_legal_moves.extend(self.get_legal_moves(sq_num))
+            all_legal_moves.extend(self.get_legal_moves(sq_num))
         # # USING STABLE LISTS
         # for sq_num in self._white_piece_squares_nums_stable if self._to_move == 'w' else self._black_piece_squares_nums_stable:
         #     if sq_num != -1:
@@ -652,9 +661,7 @@ class Board:
         if depth == 1:
             counter = 0
             for move_from, move_to in self._all_legal_moves:
-                if (self._chessboard[move_from]._piece == 'p' and 
-                   (move_from // 8, self._chessboard[move_from]._colour) in (
-                   (6, 'w'), (1, 'b'))):
+                if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
                    counter += 3
                 counter += 1
             return counter
@@ -670,6 +677,48 @@ class Board:
             else:
                 self.make_move(move_from, move_to, 'q', True)
                 leaf_nodes += self.perft(depth - 1)
+                self.unmake_move()
+        return leaf_nodes
+
+    def perft_devel(self, depth: int) -> int:
+        """
+        Return number of leaf nodes (possible positions after all legal moves)
+        at set depth from current position.
+        """
+        raise NotImplementedError()
+        if depth < 0:
+            raise ValueError('Negative depth')
+        if depth == 0:
+            return 1
+        if depth == 1:
+            counter = 0
+            for move_from, move_to in self._all_legal_moves:
+                if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
+                   counter += 3
+                counter += 1
+            return counter
+
+        leaf_nodes = 0
+        pseudolegal_moves = self.get_all_pseudolegal_moves()
+        for move_from, move_to in pseudolegal_moves:
+            # Handling promotions
+            if self._chessboard[move_from]._piece == 'p' and move_to // 8 in (0, 7):
+                self.make_move(move_from, move_to, 'q', True)
+                if not self.is_in_check(other_player=True):
+                    leaf_nodes += self.perft_devel(depth - 1)
+                    self.unmake_move()
+                else:
+                    self.unmake_move()
+                    continue
+
+                for promote_to in ('r', 'b', 'n'):
+                    self.make_move(move_from, move_to, promote_to, True)
+                    leaf_nodes += self.perft_devel(depth - 1)
+                    self.unmake_move()
+            else:
+                self.make_move(move_from, move_to, 'q', True)
+                if not self.is_in_check(other_player=True):
+                    leaf_nodes += self.perft_devel(depth - 1)
                 self.unmake_move()
         return leaf_nodes
 
@@ -829,7 +878,7 @@ class Board:
 
                 # UPDATE PIECE LISTS
                 if update_lists:
-                    self._update_piece_lists(from_colour, rook_from, rook_to)
+                    self._update_piece_sets(from_colour, rook_from, rook_to)
                     # # UPDATE STABLE PIECE LISTS
                     # self._update_stable_piece_lists(from_colour, rook_ind, rook_to)
 
@@ -839,7 +888,7 @@ class Board:
                 reset_hm_cl = 2
                 # UPDATE PIECE LISTS
                 if update_lists:
-                    self._update_piece_lists(their_colour, to_num, -1)
+                    self._update_piece_sets(their_colour, to_num, -1)
                     # # UPDATE STABLE PIECE LISTS
                     # self._update_stable_piece_lists(their_colour, self._chessboard[to_num]._list_ind, -1)
 
@@ -851,7 +900,7 @@ class Board:
                 self._add_piece(from_colour, promote_to, to_num)
                 # UPDATE PIECE LISTS
                 if update_lists:
-                    self._update_piece_lists(from_colour, from_num, to_num)
+                    self._update_piece_sets(from_colour, from_num, to_num)
                     # # UPDATE STABLE PIECE LISTS
                     # self._update_stable_piece_lists(from_colour, from_index, to_num)
                 to_num = -1
@@ -868,7 +917,7 @@ class Board:
                 # self._chessboard[ep_pawn_sq]._list_ind = -1
                 # UPDATE PIECE LISTS
                 if update_lists:
-                    self._update_piece_lists(their_colour, ep_pawn_sq, -1)
+                    self._update_piece_sets(their_colour, ep_pawn_sq, -1)
                     # # UPDATE STABLE PIECE LISTS
                     # self._update_stable_piece_lists(their_colour, ep_pawn_index, -1)
 
@@ -891,7 +940,7 @@ class Board:
         # UPDATE PIECE LISTS
         if update_lists:
             if move_type not in ('q', 'r', 'b', 'n'):
-                self._update_piece_lists(from_colour, from_num, to_num)
+                self._update_piece_sets(from_colour, from_num, to_num)
                 # # UPDATE STABLE PIECE LISTS
                 # self._update_stable_piece_lists(from_colour, from_index, to_num)
 
@@ -899,7 +948,7 @@ class Board:
 
     def _unmove_piece(self, from_num: int, to_num: int, from_colour: str, 
                       from_piece: str, to_piece: str, # from_index: int, to_index: int, 
-                      update_lists: bool = False) -> None:
+                      update_sets: bool = False) -> None:
         """
         Internal method. For all normal purposes use unmake_move() instead.
         Undo a move made using the _move_piece(from_num, to_num) method.
@@ -919,8 +968,8 @@ class Board:
             # to_sq._list_ind = to_index
 
             # UPDATE PIECE LISTS
-            if update_lists:
-                self._update_piece_lists(their_colour, -1, to_num)
+            if update_sets:
+                self._update_piece_sets(their_colour, -1, to_num)
                 # # UPDATE STABLE PIECE LISTS
                 # self._update_stable_piece_lists(their_colour, to_index, to_num)
         
@@ -937,8 +986,8 @@ class Board:
                 # self._chessboard[ep_pawn_sq]._list_ind = lost_index
 
                 # UPDATE PIECE LISTS
-                if update_lists:
-                    self._update_piece_lists(their_colour, -1, ep_pawn_sq)
+                if update_sets:
+                    self._update_piece_sets(their_colour, -1, ep_pawn_sq)
                     # # UPDATE STABLE PIECE LISTS
                     # self._update_stable_piece_lists(their_colour, lost_index, ep_pawn_sq)
 
@@ -961,16 +1010,16 @@ class Board:
                 # self._chessboard[rook_from]._list_ind = rook_index
 
                 # UPDATE PIECE LISTS
-                if update_lists:
-                    self._update_piece_lists(from_colour, rook_to, rook_from)
+                if update_sets:
+                    self._update_piece_sets(from_colour, rook_to, rook_from)
                     # # UPDATE STABLE PIECE LISTS
                     # self._update_stable_piece_lists(from_colour, rook_index, rook_from)
     
             self._move_piece(to_num, from_num, 'q', False)
         
         # UPDATE PIECE LISTS
-        if update_lists:
-            self._update_piece_lists(from_colour, to_num, from_num)
+        if update_sets:
+            self._update_piece_sets(from_colour, to_num, from_num)
             # # UPDATE STABLE PIECE LISTS
             # self._update_stable_piece_lists(from_colour, from_index, from_num)
         
@@ -990,22 +1039,13 @@ class Board:
         else:
             self._w_king_sq = sq_num
 
-    def _update_piece_lists(self, colour: str, sq_from: int, sq_to: int) -> None:
+    def _update_piece_sets(self, colour: str, sq_from: int, sq_to: int) -> None:
 
-        p_list = self._black_pieces if colour == 'b' else self._white_pieces
-        
-        if sq_from == -1:
-            p_list.append(sq_to)
-            return None
-
-        for index, sq_num in enumerate(p_list):
-            if sq_num == sq_from:
-                if sq_to == -1:
-                    p_list.pop(index)
-                else:
-                    p_list[index] = sq_to
-                return None
-        print('DEBUG: Piece not found in list')
+        p_set = self._black_pieces if colour == 'b' else self._white_pieces 
+        if sq_from != -1:
+            p_set.remove(sq_from)
+        if sq_to != -1:
+            p_set.add(sq_to)
 
     def _update_stable_piece_lists(self, colour: str, index: int, sq_to: int) -> None:
         raise NotImplementedError()
