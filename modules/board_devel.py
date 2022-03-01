@@ -1,6 +1,5 @@
 from typing import Dict, List, Tuple, Set
 from time import time
-import cython
 
 class Square:
     """Class representing a single square in the board."""
