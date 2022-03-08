@@ -74,13 +74,16 @@ class Board {
         bool can_castle[4];
         int ep_square, hm_clock, fm_counter, w_king_square, b_king_square;
         flInt w_pcs, b_pcs; // piece lists
-        vInt legal_moves;
+        vPIntInt _all_legal_moves;
         std::deque<move_record> move_history;
+        pIntInt _move_piece(const int, const int, const char, const bool);
+        void _unmove_piece(const int, const int, const char, const char, const char, const bool);
         void _upd_king(const bool, const int);
         void _upd_piece_l(const bool, const int, const int);
     public:
         Board(const std::string);
         void print();
+        void print(const vPIntInt &, const int);
         void print(const flInt &);
         void print(const usInt &);
         void set_fen(const std::string);
@@ -89,18 +92,32 @@ class Board {
         vPIntInt get_all_pseudolegal_moves();
         bool is_in_check();
         bool is_in_check(const bool);
+        vPIntInt get_legal_moves(const int);
+        void show_legal_moves(const int);
+        void show_piece_positions(const bool);
+        vPIntInt get_all_legal_moves();
+        void make_move(const int, const int, const char, const bool);
+        void unmake_move();
         void interactive_mode();
         void testing();
 };
 
 Board::Board(const std::string fen = FEN_INIT) {
-    this->legal_moves.reserve(218);
+    this->_all_legal_moves.reserve(218);
     this->set_fen(fen);
 }
 
 void Board::print() {
     const usInt empty_set; // disgusting hack, TODO: rewrite
     this->print(empty_set);
+}
+
+void Board::print(const vPIntInt &h_sqrs_vp, const int sq_num) {
+    usInt h_sqrs_s;
+    for (pIntInt pair : h_sqrs_vp) {
+        if (pair.first == sq_num) h_sqrs_s.insert(pair.second);
+    }
+    this->print(h_sqrs_s);
 }
 
 void Board::print(const flInt &h_sqrs_l) {
@@ -353,12 +370,116 @@ bool Board::is_in_check() {
     return this->is_in_check(true);
 }
 
-bool Board::is_in_check(const bool curr_player) {
+bool Board::is_in_check(const bool curr_player) { // can be more efficient - don't check the same squares more than once; TODO: rewrite
     const bool w_king = (curr_player) ? this->w_to_move : !this->w_to_move;
-    int k_row = (w_king) ? w_king_square>>3 : b_king_square>>3;
-    int k_col = (w_king) ? w_king_square&7 : b_king_square&7; // TODO: consider rewriting
-    // TBA
+    const char opp_clr = (w_king) ? 'b' : 'w';
+    const int k_row = (w_king) ? w_king_square>>3 : b_king_square>>3;
+    const int k_col = (w_king) ? w_king_square&7 : b_king_square&7; // TODO: consider rewriting
+    const int pawn_move = (w_king) ? 1 : -1;
+    int atk_row, atk_col;
+    square* atk_sq;
+    const int mv_col[2] = {-1, 1}; // pawn checks
+    for (int i=0; i<2; ++i) {
+        atk_row = k_row + pawn_move; atk_col = k_col + mv_col[i];
+        if (0<=atk_row && atk_row<=7 && 0<=atk_col && atk_col<=7) {
+            atk_sq = &this->chessboard[(atk_row<<3)+atk_col];
+            if (atk_sq->piece=='p' && atk_sq->colour==opp_clr) return true;
+        }
+    }
+    vPIntInt moves[2] = {{{1, 1}, {1, 0}, {1, -1}, {0, 1}, 
+                          {0, -1}, {-1, 1}, {-1, 0}, {-1, -1}}, 
+                         {{1, 2}, {1, -2}, {-1, 2}, {-1, -2}, 
+                          {2, 1}, {2, -1}, {-2, 1}, {-2, -1}}};
+    char pcs[2] = {'k', 'n'};
+    for (int i=0; i<2; ++i) { // kings on adjacent squares, knight checks
+        for (pIntInt pair : moves[i]) {
+            atk_row = k_row + pair.first; atk_col = k_col + pair.second;
+            if (0<=atk_row && atk_row<=7 && 0<=atk_col && atk_col<=7) {
+                atk_sq = &this->chessboard[(atk_row<<3)+atk_col];
+                if (atk_sq->piece==pcs[i]&&atk_sq->colour==opp_clr) return true;
+            }
+        }
+    }
+    vPIntInt moves[2] = {{{-1, -1}, {-1, 1}, {1, -1}, {1, 1}}, 
+                         {{-1, 0}, {0, -1}, {1, 0}, {0, 1}}};
+    char pcs[2] = {'b', 'r'};
+    for (int i=0; i<2; ++i) { // ray piece checks
+        for (pIntInt pair : moves[i]) {
+            atk_row = k_row + pair.first; atk_col = k_col + pair.second;
+            while (0<=atk_row && atk_row<=7 && 0<=atk_col && atk_col<=7) {
+                atk_sq = &this->chessboard[(atk_row<<3)+atk_col];
+                if ((atk_sq->piece==pcs[i] || atk_sq->piece=='q') && 
+                     atk_sq->colour==opp_clr) return true;
+                else if (atk_sq->colour != 'e') break;
+                atk_row += pair.first; atk_col += pair.second;
+            }
+        }
+    }
     return false;
+}
+
+vPIntInt Board::get_legal_moves(const int from_num) {
+    vInt plegal_moves = this->get_pseudolegal_moves(from_num);
+    vPIntInt legal_moves;
+    const square* from_sq = &this->chessboard[from_num];
+    const bool from_white = (from_sq->colour == 'w');
+    const char opp_colour = (from_white) ? 'b' : 'w';
+    const char from_piece = from_sq->piece;
+    if (from_white != this->w_to_move) return legal_moves;
+    square* to_sq;
+    for (int to_num : plegal_moves) {
+        to_sq = &this->chessboard[to_num];
+        if (from_piece == 'k' && abs(to_num - from_num) == 2) { // castling
+            int cs_dir = (to_num > from_num) ? 1 : -1; // determine side
+            this->_move_piece(from_num, from_num + cs_dir);
+            if (this->is_in_check()) { // illegal if king in check on this sq
+                this->_move_piece(from_num + cs_dir, from_num); // maybe should call _unmove_piece()? TODO: consider changing
+                continue;
+            }
+            this->_move_piece(from_num + cs_dir, from_num); // see above
+        }
+        this->_move_piece(from_num, to_num); // move, see if in check, unmove
+        if (!this->is_in_check()) 
+            legal_moves.push_back(std::make_pair(from_num, to_num));
+        this->_unmove_piece(from_num, to_num, from_sq->colour, from_piece, to_sq->piece);
+    }
+    return legal_moves;
+}
+
+void Board::show_legal_moves(const int sq_num) {
+    this->print(this->_all_legal_moves, sq_num);
+}
+
+void Board::show_piece_positions(const bool curr_player) {
+    bool white = (curr_player) ? this->w_to_move : !this->w_to_move;
+    flInt* p = (white) ? &this->w_pcs : &this->b_pcs;
+    this->print(*p);
+}
+
+vPIntInt Board::get_all_legal_moves() {
+    vPIntInt all_legal_moves, t;
+    const flInt* p = (this->w_to_move) ? &this->w_pcs : &this->b_pcs;
+    for (int sq_num : *p) {
+        t = this->get_legal_moves(sq_num);
+        all_legal_moves.insert(all_legal_moves.end(), t.begin(), t.end());
+    }
+    return all_legal_moves;
+}
+
+void Board::make_move(const int from_num, const int to_num, 
+                      const char promote_to = 'q', const bool perft = false) {
+    if (!perft) { // suboptimal, but who cares (not an important part); TODO: maybe fix
+        bool is_ok = false;
+        for (pIntInt pair : this->_all_legal_moves) {
+            if (pair.first == from_num && pair.second == to_num) {
+                is_ok = true; break;
+            }
+        }
+        if (!is_ok) {
+            std::cout << "DEBUG: Illegal move" << std::endl; return;
+        }
+    }
+    bool cn_cs[4];
 }
 
 void Board::interactive_mode() {
