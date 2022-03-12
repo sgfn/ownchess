@@ -1,3 +1,4 @@
+#include <chrono>
 #include <deque>
 #include <iostream>
 #include <forward_list>
@@ -51,9 +52,8 @@ char square::print() {
 
 struct move_record {
     int from_num, to_num;
-    char from_piece, to_piece, move_type;
-    bool can_castle[4];
-    int ep_square, hm_clock, fm_counter;
+    char from_piece, to_piece;
+    int move_type, can_castle, ep_square, hm_clock;
     vPIntInt legal_moves;
 };
 
@@ -64,20 +64,23 @@ int alg_to_num(const std::string alg_coords) {
 std::string num_to_alg(const int sq_num) {
     if (sq_num == -1) return "-";
     std::string alg_str = "";
-    alg_str += (char)((sq_num&7) + 97) + (char)((sq_num>>3) + 49);
+    alg_str.push_back((sq_num&7) + 97);
+    alg_str.push_back((sq_num>>3) + 49);
     return alg_str;
 }
 
 class Board {
         square chessboard[64];
         bool w_to_move; // true if white to move
-        bool can_castle[4];
-        int ep_square, hm_clock, fm_counter, w_king_square, b_king_square;
+        int can_castle, ep_square, hm_clock, fm_counter, w_king_square, b_king_square;
         flInt w_pcs, b_pcs; // piece lists
         vPIntInt _all_legal_moves;
         std::deque<move_record> move_history;
+        void _add_piece(const bool, const char, const int);
+        pIntInt _move_piece(const int, const int);
         pIntInt _move_piece(const int, const int, const char, const bool);
-        void _unmove_piece(const int, const int, const char, const char, const char, const bool);
+        void _unmove_piece(const int, const int, const bool, const char, const char);
+        void _unmove_piece(const int, const int, const bool, const char, const char, const bool);
         void _upd_king(const bool, const int);
         void _upd_piece_l(const bool, const int, const int);
     public:
@@ -98,6 +101,8 @@ class Board {
         vPIntInt get_all_legal_moves();
         void make_move(const int, const int, const char, const bool);
         void unmake_move();
+        int detect_game_end(const bool);
+        int perft(const int);
         void interactive_mode();
         void testing();
 };
@@ -175,10 +180,9 @@ void Board::set_fen(const std::string fen = FEN_INIT) {
                     col += ch-48;
                 }
                 else { // ch is a piece
-                    char colour, piece;
                     bool white = (ch >= 65 && ch <= 90); // is ch uppercase
                     int sq_num = ((7-row)<<3) + col++;
-                    if (piece == 'k') { // update king squares
+                    if (ch=='k' || ch=='K') { // update king squares
                         this->_upd_king(white, sq_num);
                     }
                     this->chessboard[sq_num].colour = (white) ? 'w' : 'b';
@@ -189,14 +193,14 @@ void Board::set_fen(const std::string fen = FEN_INIT) {
             }
             else if (fen_field==1) { // set the player to move, clear can_castle
                 this->w_to_move = (ch == 'w');
-                for (int i=0; i<4; i++) this->can_castle[i] = false;
+                this->can_castle = 0;
             }
             else if (fen_field==2) { // set the correct castling rights
                 switch (ch) {
-                    case 'K': this->can_castle[0] = true; break;
-                    case 'Q': this->can_castle[1] = true; break;
-                    case 'k': this->can_castle[2] = true; break;
-                    case 'q': this->can_castle[3] = true; break;
+                    case 'K': this->can_castle += 8; break;
+                    case 'Q': this->can_castle += 4; break;
+                    case 'k': this->can_castle += 2; break;
+                    case 'q': this->can_castle += 1; break;
                     default: break;
                 }
             }
@@ -218,8 +222,11 @@ void Board::set_fen(const std::string fen = FEN_INIT) {
             else break;
         }
     }
-    // Update list of legal moves - TBA
-    // Detect and handle game ending states - TBA
+    // Update list of legal moves
+    this->_all_legal_moves = this->get_all_legal_moves();
+
+    // Detect and handle game ending states
+    this->detect_game_end(true);
 }
 
 std::string Board::get_fen() {
@@ -241,9 +248,11 @@ std::string Board::get_fen() {
     }
     char to_mv = (this->w_to_move) ? 'w' : 'b';
     std::string cn_cs = "";
-    char aid[4] = {'K', 'Q', 'k', 'q'};
+    char cn_cs_char[4] = {'K', 'Q', 'k', 'q'};
+    int mask = 8;
     for (int i=0; i<4; i++) {
-        if (this->can_castle[i]) cn_cs += aid[i];
+        if (this->can_castle & mask > 0) cn_cs += cn_cs_char[i];
+        mask>>=1;
     }
     if (cn_cs == "") cn_cs = "-";
     return pcs + ' ' + to_mv + ' ' + cn_cs + ' ' + num_to_alg(this->ep_square) 
@@ -290,10 +299,10 @@ vInt Board::get_pseudolegal_moves(const int sq_num) {
             all_moves = {{1, 1}, {1, 0}, {1, -1}, {0, 1}, 
                          {0, -1}, {-1, 1}, {-1, 0}, {-1, -1}};
             // Castling
-            int cs_kside_index = (from_white) ? 0 : 2;
+            int cs_kside_mask = (from_white) ? 8 : 2;
             square* b = this->chessboard;
             int tmp_iic_val = -1; // helper var for storing is_in_check() result
-            if (this->can_castle[cs_kside_index]) { // castling kingside
+            if (this->can_castle&cs_kside_mask > 0) { // castling kingside
                 for (int i=1; i<3; ++i) {
                     if (b[sq_num+i].colour != 'e') break;
                     if (i == 2) { // TODO: consider rewriting this bit of code
@@ -302,7 +311,7 @@ vInt Board::get_pseudolegal_moves(const int sq_num) {
                     }
                 }
             }
-            if (this->can_castle[cs_kside_index+1]) { // castling queenside
+            if (this->can_castle&(cs_kside_mask>>1) > 0) { // castling queenside
                 for (int i=1; i<4; ++i) {
                     if (b[sq_num-i].colour != 'e') break;
                     if (i==3) { // TODO: see above
@@ -400,15 +409,15 @@ bool Board::is_in_check(const bool curr_player) { // can be more efficient - don
             }
         }
     }
-    vPIntInt moves[2] = {{{-1, -1}, {-1, 1}, {1, -1}, {1, 1}}, 
+    vPIntInt ray_moves[2] = {{{-1, -1}, {-1, 1}, {1, -1}, {1, 1}}, 
                          {{-1, 0}, {0, -1}, {1, 0}, {0, 1}}};
-    char pcs[2] = {'b', 'r'};
+    char ray_pcs[2] = {'b', 'r'};
     for (int i=0; i<2; ++i) { // ray piece checks
-        for (pIntInt pair : moves[i]) {
+        for (pIntInt pair : ray_moves[i]) {
             atk_row = k_row + pair.first; atk_col = k_col + pair.second;
             while (0<=atk_row && atk_row<=7 && 0<=atk_col && atk_col<=7) {
                 atk_sq = &this->chessboard[(atk_row<<3)+atk_col];
-                if ((atk_sq->piece==pcs[i] || atk_sq->piece=='q') && 
+                if ((atk_sq->piece==ray_pcs[i] || atk_sq->piece=='q') && 
                      atk_sq->colour==opp_clr) return true;
                 else if (atk_sq->colour != 'e') break;
                 atk_row += pair.first; atk_col += pair.second;
@@ -425,10 +434,12 @@ vPIntInt Board::get_legal_moves(const int from_num) {
     const bool from_white = (from_sq->colour == 'w');
     const char opp_colour = (from_white) ? 'b' : 'w';
     const char from_piece = from_sq->piece;
-    if (from_white != this->w_to_move) return legal_moves;
+    if (from_white != this->w_to_move)      return legal_moves;
     square* to_sq;
+    char to_piece;
     for (int to_num : plegal_moves) {
         to_sq = &this->chessboard[to_num];
+        to_piece = to_sq->piece;
         if (from_piece == 'k' && abs(to_num - from_num) == 2) { // castling
             int cs_dir = (to_num > from_num) ? 1 : -1; // determine side
             this->_move_piece(from_num, from_num + cs_dir);
@@ -441,7 +452,7 @@ vPIntInt Board::get_legal_moves(const int from_num) {
         this->_move_piece(from_num, to_num); // move, see if in check, unmove
         if (!this->is_in_check()) 
             legal_moves.push_back(std::make_pair(from_num, to_num));
-        this->_unmove_piece(from_num, to_num, from_sq->colour, from_piece, to_sq->piece);
+        this->_unmove_piece(from_num, to_num, from_white, from_piece, to_piece);
     }
     return legal_moves;
 }
@@ -466,12 +477,12 @@ vPIntInt Board::get_all_legal_moves() {
     return all_legal_moves;
 }
 
-void Board::make_move(const int from_num, const int to_num, 
+void Board::make_move(const int fr_num, const int to_num, 
                       const char promote_to = 'q', const bool perft = false) {
     if (!perft) { // suboptimal, but who cares (not an important part); TODO: maybe fix
         bool is_ok = false;
         for (pIntInt pair : this->_all_legal_moves) {
-            if (pair.first == from_num && pair.second == to_num) {
+            if (pair.first == fr_num && pair.second == to_num) {
                 is_ok = true; break;
             }
         }
@@ -479,18 +490,157 @@ void Board::make_move(const int from_num, const int to_num,
             std::cout << "DEBUG: Illegal move" << std::endl; return;
         }
     }
-    bool cn_cs[4];
+    const int cn_cs = this->can_castle; // store board properties before making the move
+    const int ep_sq = this->ep_square;
+    const int hm_cl = this->hm_clock;
+
+    const square* fr_sq = &this->chessboard[fr_num];
+    const square* to_sq = &this->chessboard[to_num];
+    const bool fr_white = (fr_sq->colour == 'w');
+    const char fr_piece = fr_sq->piece;
+    const char to_piece = to_sq->piece;
+
+    // Detecting loss of castling rights
+    // King has moved from the starting square
+    if ((fr_num==4||fr_num==60) && fr_piece=='k') {
+        this->can_castle &= (fr_white) ? 3 : 12;
+    }
+    // Rook has moved from the starting square
+    else if ((fr_num==0||fr_num==7||fr_num==56||fr_num==63) && fr_piece=='r') {
+        if ((fr_num==7&&fr_white) || (fr_num==63&&!fr_white)) {
+            this->can_castle &= (fr_white) ? 7 : 13;
+        }
+        else if ((fr_num==0&&fr_white) || (fr_num==56&&!fr_white)) {
+            this->can_castle &= (fr_white) ? 11 : 14;
+        }
+    }
+    // Rook was captured
+    else if ((to_num==0||to_num==7||to_num==56||to_num==63) && to_piece=='r') {
+        // Capturing the rook removes castling rights for the opponent
+        if ((to_num==7&&!fr_white) || (to_num==63&&fr_white)) {
+            this->can_castle &= (!fr_white) ? 7  : 13;
+        }
+        else if ((to_num==0&&!fr_white) || (to_num==56&&fr_white)) {
+            this->can_castle &= (!fr_white) ? 11 : 14;
+        }
+    }
+
+    // Move the piece and check whether to reset the halfmove clock
+    pIntInt mp_res = this->_move_piece(fr_num, to_num, promote_to, true);
+    if (mp_res.first > 0)   this->hm_clock = 0;
+    else                    this->hm_clock++;
+
+    if (!this->w_to_move)   this->fm_counter++;
+    this->w_to_move = !this->w_to_move;
+
+    vPIntInt lgl_mvs = {this->_all_legal_moves};
+
+    // Update the move history
+    move_record r = {fr_num, to_num, fr_piece, to_piece, mp_res.second, cn_cs, 
+                     ep_sq, hm_cl, lgl_mvs};
+    this->move_history.push_back(r);
+
+    // Detect possibility of en passant in next ply
+    if (fr_piece == 'p') {
+        if      (to_num-fr_num ==  16)  this->ep_square = to_num-8;
+        else if (to_num-fr_num == -16)  this->ep_square = to_num+8;
+        else                            this->ep_square = -1;
+    }
+    else    this->ep_square = -1;
+
+    // Update the list of legal moves
+    this->_all_legal_moves = this->get_all_legal_moves();
+
+    // Detect and handle game ending states
+    if (!perft)    this->detect_game_end(true);
+}
+
+void Board::unmake_move() {
+    if (this->move_history.empty()) {
+        std::cerr << "DEBUG: Nothing to unmake" << std::endl;
+        return;
+    }
+    // Get the most recent move record and delete it from the history
+    move_record r = this->move_history.back();
+    this->move_history.pop_back(); // TODO: maybe rewrite so as not to copy r
+
+    // Reinstate previous board properties
+    this->can_castle = r.can_castle;
+    this->ep_square = r.ep_square;
+    this->hm_clock = r.hm_clock;
+    if (this->w_to_move)    this->fm_counter--;
+
+    // Unmake the move
+    this->_unmove_piece(r.from_num, r.to_num, !this->w_to_move, r.from_piece, r.to_piece, true);
+
+    // Change the player to move, load the vector of legal moves from cache
+    this->w_to_move = !this->w_to_move;
+    this->_all_legal_moves = r.legal_moves;
+}
+
+int Board::detect_game_end(const bool verbose = false) {
+    if (this->_all_legal_moves.empty()) {
+        if (this->is_in_check()) {
+            if (verbose) {
+                std::string clr = (this->w_to_move) ? "Black" : "White";
+                std::cout << "Checkmate. " << clr << " wins" << std::endl;
+            }
+            return 1;
+        }
+        else {
+            if (verbose)    std::cout << "Stalemate" << std::endl;
+            return 2;
+        }
+    }
+    return 0;
+}
+
+int Board::perft(const int depth) {
+    if (depth == 1) {
+        int counter = 0;
+        for (pIntInt pair : this->_all_legal_moves) {
+            if (this->chessboard[pair.first].piece=='p' && (pair.second>>3==0||pair.second>>3==7)) {
+                counter += 4;
+            }
+            else    ++counter;
+        }
+        return counter;
+    }
+    else if (depth < 1) {
+        if (depth == 0) return 1;
+        else            throw std::underflow_error("Negative depth");
+    }
+
+    int leaf_nodes = 0;
+    vPIntInt alm = {this->_all_legal_moves};
+    for (pIntInt pair : alm) {
+        // Handling promotions
+        if (this->chessboard[pair.first].piece=='p' && (pair.second>>3==0||pair.second>>3==7)) {
+            for (char promote_to : {'q', 'r', 'b', 'n'}) {
+                this->make_move(pair.first, pair.second, promote_to, true);
+                leaf_nodes += this->perft(depth-1);
+                this->unmake_move();
+            }
+        }
+        else {
+            this->make_move(pair.first, pair.second, 'q', true);
+            leaf_nodes += this->perft(depth-1);
+            this->unmake_move();
+        }
+    }
+    return leaf_nodes;
 }
 
 void Board::interactive_mode() {
     std::cout << WELCOME_STR << std::endl;
     bool active = true;
-    std::string input, cmd;
+    std::string input, cmd, args;
     int sep_pos;
     while (active) {
         std::getline(std::cin, input);
         sep_pos = input.find(' ');
         cmd = input.substr(0, sep_pos);
+        args = input.substr(sep_pos+1, std::string::npos);
         if (cmd=="q" || cmd=="qqq" || cmd=="quit" || cmd=="exit") {
             active = false;
         }
@@ -501,7 +651,7 @@ void Board::interactive_mode() {
             this->print();
         }
         else if (cmd=="c" || cmd=="iic" || cmd=="check") {
-            // TBA
+            std::cout << this->is_in_check() << std::endl;
         }
         else if (cmd=="f" || cmd=="fen") {
             if (input.substr(sep_pos+1, 3) == "get") {
@@ -509,7 +659,7 @@ void Board::interactive_mode() {
             }
             else {
                 if (sep_pos == std::string::npos) this->set_fen();
-                else this->set_fen(input.substr(sep_pos+1, std::string::npos));
+                else this->set_fen(args);
             }
         }
         else if (cmd=="l" || cmd=="slm" || cmd=="legal") {
@@ -525,7 +675,12 @@ void Board::interactive_mode() {
             // TBA
         }
         else if (cmd=="p" || cmd=="perft") {
-            // TBA
+            auto s_tm = std::chrono::high_resolution_clock::now();
+            const int nodes = this->perft(std::stoi(args));
+            auto e_tm = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double, std::milli> t_tm = e_tm-s_tm;
+            std::cout << "Nodes: " << nodes << " \tTime: " << t_tm.count();
+            std::cout << " ms" << std::endl;
         }
         else if (cmd=="d" || cmd=="divide") {
             // TBA
@@ -536,7 +691,145 @@ void Board::interactive_mode() {
     }
 }
 
+void Board::_add_piece(const bool white, const char piece, const int sq_num) {
+    square* to_sq = &this->chessboard[sq_num];
+
+    if (piece == 'k')   this->_upd_king(white, sq_num);
+
+    to_sq->colour = (white) ? 'w' : 'b';
+    to_sq->piece = piece;
+}
+
+pIntInt Board::_move_piece(const int from_num, const int to_num) {
+    return this->_move_piece(from_num, to_num, 'q', false);
+}
+
+pIntInt Board::_move_piece(const int from_num, const int to_num, const char promote_to, const bool upd_lists) {
+    // std::cout << "MV " << num_to_alg(from_num) << "->" << num_to_alg(to_num) << std::endl;
+    int reset_hm_cl = 0, move_type = 's';
+    square* from_sq = &this->chessboard[from_num];
+    if (from_sq->colour == 'e') {
+        std::cerr << "DEBUG: Square " << from_num << " is empty" << std::endl;
+        return std::make_pair(0, 0);
+    }
+    const bool from_white = (from_sq->colour == 'w');
+    const char their_colour = (from_white) ? 'b' : 'w';
+
+    if (from_sq->piece == 'k') {
+        this->_upd_king(from_white, to_num);
+        // Handle castling moves
+        if ((from_num==4||from_num==60) && abs(to_num-from_num)==2) {
+            move_type = 'c';
+            const bool c_kside = (to_num > from_num); // true if kingside
+            const int r_from = (c_kside) ? from_num+3 : from_num-4;
+            const int r_to   = (c_kside) ? from_num+1 : from_num-1;
+
+            this->chessboard[r_to].colour   = (from_white) ? 'w' : 'b';
+            this->chessboard[r_to].piece    = 'r';
+            this->chessboard[r_from].colour = 'e';
+            this->chessboard[r_from].piece  = 'e';
+
+            if (upd_lists)  this->_upd_piece_l(from_white, r_from, r_to);
+        }
+    }
+
+    // Standard capture
+    if (to_num!=-1 && this->chessboard[to_num].colour==their_colour) {
+        reset_hm_cl = 2;
+
+        if (upd_lists)  this->_upd_piece_l(!from_white, to_num, -1);
+    }
+
+    if (from_sq->piece == 'p') {
+        reset_hm_cl = 1;
+        // Handle promotions
+        const int pr_row = (from_white) ? 7 : 0;
+        if (to_num>>3 == pr_row) {
+            move_type = promote_to;
+            this->_add_piece(from_white, promote_to, to_num);
+        }
+
+        // Handle en passant
+        else if (to_num == this->ep_square) {
+            move_type = 'e';
+            const int ep_pawn_sq = (to_num > from_num) ? to_num-8 : to_num+8;
+            this->chessboard[ep_pawn_sq].colour = 'e';
+            this->chessboard[ep_pawn_sq].piece = 'e';
+
+            if (upd_lists)  this->_upd_piece_l(!from_white, ep_pawn_sq, -1);
+        }
+    }
+
+    // Actually move the piece
+    if (to_num != -1 && move_type != promote_to) {
+        this->chessboard[to_num].colour = (from_white) ? 'w' : 'b';
+        this->chessboard[to_num].piece = from_sq->piece;
+    }
+
+    from_sq->colour = 'e';
+    from_sq->piece = 'e';
+
+    if (upd_lists)  this->_upd_piece_l(from_white, from_num, to_num);
+
+    return std::make_pair(reset_hm_cl, move_type);
+}
+
+void Board::_unmove_piece(const int from_num, const int to_num, const bool from_white, const char from_piece, const char to_piece) {
+    return this->_unmove_piece(from_num, to_num, from_white, from_piece, to_piece, false);
+}
+
+void Board::_unmove_piece(const int from_num, const int to_num, const bool from_white, const char from_piece, const char to_piece, const bool upd_lists) {
+    // std::cout << "UMV " << num_to_alg(from_num) << "->" << num_to_alg(to_num) << " fr_wh:" << from_white << "; fr_pc:" << from_piece << "; to_pc:" << to_piece << "; upd_lists:" << upd_lists << std::endl;
+    square* from_sq = &this->chessboard[from_num];
+    square* to_sq   = &this->chessboard[to_num];
+
+    const char from_colour  = (from_white) ? 'w' : 'b';
+    const char their_colour = (from_white) ? 'b' : 'w';
+
+    if (to_piece != 'e') { // Move was a standard capture
+        from_sq->colour = from_colour;
+        from_sq->piece = from_piece;
+        to_sq->colour = their_colour;
+        to_sq->piece = to_piece;
+
+        if (upd_lists)  this->_upd_piece_l(!from_white, -1, to_num);
+    }
+    else { // Move was either en passant or not a capture (possibly castling)
+        // Handle en passant
+        if (from_piece == 'p' && to_num == this->ep_square) {
+            const int ep_pawn_sq = (to_num > from_num) ? to_num-8 : to_num+8;
+            this->chessboard[ep_pawn_sq].colour = their_colour;
+            this->chessboard[ep_pawn_sq].piece = 'p';
+
+            if (upd_lists)  this->_upd_piece_l(!from_white, -1, ep_pawn_sq);
+        }
+        // Handle castling
+        else if (from_piece == 'k' && abs(to_num-from_num) == 2) {
+            const bool c_kside = (to_num > from_num); // true if kingside
+            const int r_from = (c_kside) ? from_num+3 : from_num-4;
+            const int r_to   = (c_kside) ? from_num+1 : from_num-1;
+
+            this->chessboard[r_to].colour   = 'e';
+            this->chessboard[r_to].piece    = 'e';
+            this->chessboard[r_from].colour = from_colour;
+            this->chessboard[r_from].piece  = 'r';
+
+            if (upd_lists)  this->_upd_piece_l(from_white, r_to, r_from);
+        }
+        this->_move_piece(to_num, from_num, 'q', false);
+    }
+
+    if (upd_lists)  this->_upd_piece_l(from_white, to_num, from_num);
+
+    // Cleaning up after unmaking a promotion
+    if (from_piece != from_sq->piece)   from_sq->piece = from_piece;
+
+    // Update king position
+    if (from_piece == 'k')  this->_upd_king(from_white, from_num);
+}
+
 void Board::_upd_king(const bool white, const int sq_to) {
+    // std::cout << "UPD KING " << white << sq_to << std::endl;
     if (white) this->w_king_square = sq_to;
     else this->b_king_square = sq_to;
 }
@@ -559,6 +852,11 @@ void Board::_upd_piece_l(const bool white, const int sq_from, const int sq_to) {
 
 void Board::testing() {
     this->print(this->b_pcs);
+    this->print(this->w_pcs);
+    // int i = 0;
+    // for (square s : this->chessboard) {
+    //     std::cout << i++ << ' ' << s.colour << ' ' << s.piece << std::endl;
+    // }
 }
 
 int main() {
@@ -567,6 +865,7 @@ int main() {
 
     std::cout << LOGO_STR << std::endl;
     Board the_board;
+    // the_board.testing();
     the_board.interactive_mode();
 
     return 0;
