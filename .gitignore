@@ -1,5 +1,11 @@
-.vscode/
-__pycache__/
-modules/__pycache__/
-tests/results/
+*__pycache__/
+
+*.exe
+
+tests/
+test_*
+
 images/src/
+*.svgz
+
+.vscode/
