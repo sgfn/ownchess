@@ -2,8 +2,7 @@
 
 *.exe
 
-tests/
-test_*
+tests/results/
 
 images/src/
 *.svgz
